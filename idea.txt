@@ -1,0 +1,29 @@
+# A. Bài toán
+
+- Cho 1 data lake → gồm nhiều kiểu dữ liệu → multimodal + Data Sources
+- Hữu hạn kiểu dữ liệu
+- Câu hỏi → truy vấn file → tạo kq
+- quota openrouter hữu hạn (20 đô)
+- Dữ liệu có thể là private (tư nhân, v.v) hoặc thông tin khách quan (kinh tế chính trị, v.v) nhưng bắt buộc phải chỉ rõ data sources (files nào trong data lake)
+- Các loại data:
+    - Structured: .csv, .xlsx
+    - Text: txt, md, html (code)
+    - Ảnh
+    - Video
+    - Âm thanh
+
+# B. Baseline (skip)
+
+- n-1: Với mỗi query, dùng cả n file và hỏi llm n lần xem có chứa thông tin cần thiết cho câu trả lời không → trích xuất → tổng hợp thông tin & trả lời ⇒ O(n files * m queries)
+
+# C. Pipeline
+
+- Phân loại file
+- Data understanding + Data processing: tạo summary/định danh cho từng file + tóm tắt nội dung/chuyển đổi về kiểu dữ liệu dễ xử lý (nếu cần)
+    - Cần chuẩn hóa các thông tin cần summary
+- Search/Ranking: Tìm những file liên quan đến câu hỏi
+    - Semantic search, keyword search, LLm → ranking
+- Truy vấn thông tin trong file:
+    - File to quá → chunking, khoanh vùng
+    - file nhỏ/vừa → lấy luôn
+- Nạp thông tin cho LLm và Trả lời
