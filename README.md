@@ -121,7 +121,11 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `mmdlqa_core/`: schema, config, question loader, OpenRouter client, utility và contract chung như `RagQuery`, `ReasoningStep`, `AgentState`.
 - `mmdlqa_preprocess/`: xử lý offline data lake, extract file, chunk, và ghi knowledge library/cache.
 - `mmdlqa_retrieval/`: search/RAG; `SentenceRAG` nhận một câu truy vấn tự nhiên rồi trả về chunks liên quan.
-- `mmdlqa_agents/`: deterministic tools, baseline reasoner, workflow shell `Coordinator -> RAG -> Reasoner -> Critic`.
+- `mmdlqa_agents/`: multi-agent workflow `Planner -> RAG -> Tool/Coder -> MoE Reasoners -> Aggregator -> Critic`.
+  - `planner.py`: tách câu hỏi thành các `ReasoningStep`; mỗi step là một sentence có thể đưa thẳng vào RAG.
+  - `reasoners.py`: chạy deterministic tool trước, rồi các LLM experts như exact-answer và synthesis khi bật MoE.
+  - `critic.py`: kiểm tra answer/evidence, có thể yêu cầu retrieve bổ sung bằng `missing_queries`.
+  - `workflow.py`: điều phối loop nhiều round và ghi diagnostics chi tiết.
 - `mmdlqa_orchestration/`: runner pipeline nối preprocess, retrieval và agent để xuất submission.
 - `script/run_agentic.py`: entrypoint chạy song song với baseline runner.
 
@@ -132,6 +136,11 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_VISION_LLM=0`: không gọi vision LLM cho câu hỏi ảnh.
 - `MMDLQA_USE_LLM_SUMMARIES=1`: caption mọi ảnh lúc build index, tốn quota hơn nhưng retrieve tốt hơn.
 - `MMDLQA_USE_WHISPER=0`: không transcribe audio/video.
+- `MMDLQA_USE_AGENTIC_PLANNER=0`: dùng rule-based planner thay vì LLM planner.
+- `MMDLQA_USE_AGENTIC_MOE=0`: chỉ dùng deterministic tools + fallback, không gọi MoE reasoners.
+- `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.
+- `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=2`: giới hạn planning/retry.
+- `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, dùng model riêng cho các expert.
 - `MMDLQA_RETRIEVE_TOP_K=8`, `MMDLQA_RERANK_TOP_K=5`, `MMDLQA_MAX_CONTEXT_CHARS=16000`: giảm token.
 
 ## Notes

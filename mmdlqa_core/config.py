@@ -33,6 +33,9 @@ class Settings:
     use_vision_llm: bool = True
     use_whisper: bool = True
     use_sentence_transformers: bool = False
+    use_agentic_planner: bool = True
+    use_agentic_moe: bool = True
+    use_agentic_critic: bool = True
 
     chunk_size_chars: int = 3200
     chunk_overlap_chars: int = 450
@@ -43,6 +46,9 @@ class Settings:
     request_timeout_sec: int = 120
     max_image_side: int = 1280
     video_frame_count: int = 6
+    agentic_max_steps: int = 5
+    agentic_max_rounds: int = 2
+    agentic_moe_models: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +79,9 @@ class Settings:
             use_vision_llm=_bool_env("MMDLQA_USE_VISION_LLM", True),
             use_whisper=_bool_env("MMDLQA_USE_WHISPER", True),
             use_sentence_transformers=_bool_env("MMDLQA_USE_SENTENCE_TRANSFORMERS", False),
+            use_agentic_planner=_bool_env("MMDLQA_USE_AGENTIC_PLANNER", True),
+            use_agentic_moe=_bool_env("MMDLQA_USE_AGENTIC_MOE", True),
+            use_agentic_critic=_bool_env("MMDLQA_USE_AGENTIC_CRITIC", True),
             chunk_size_chars=int(os.getenv("MMDLQA_CHUNK_SIZE_CHARS", "3200")),
             chunk_overlap_chars=int(os.getenv("MMDLQA_CHUNK_OVERLAP_CHARS", "450")),
             retrieve_top_k=int(os.getenv("MMDLQA_RETRIEVE_TOP_K", "12")),
@@ -82,6 +91,9 @@ class Settings:
             request_timeout_sec=int(os.getenv("MMDLQA_REQUEST_TIMEOUT_SEC", "120")),
             max_image_side=int(os.getenv("MMDLQA_MAX_IMAGE_SIDE", "1280")),
             video_frame_count=int(os.getenv("MMDLQA_VIDEO_FRAME_COUNT", "6")),
+            agentic_max_steps=int(os.getenv("MMDLQA_AGENTIC_MAX_STEPS", "5")),
+            agentic_max_rounds=int(os.getenv("MMDLQA_AGENTIC_MAX_ROUNDS", "2")),
+            agentic_moe_models=os.getenv("MMDLQA_AGENTIC_MOE_MODELS", ""),
         )
 
     def ensure_dirs(self) -> None:

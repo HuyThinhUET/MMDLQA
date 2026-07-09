@@ -1,47 +1,16 @@
 from __future__ import annotations
 
 from mmdlqa_core.config import Settings
-from mmdlqa_core.contracts import AgentState, AnswerCandidate, CriticReport, RagQuery, ReasoningStep
+from mmdlqa_core.contracts import AgentState, AnswerCandidate, RagQuery
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
+from mmdlqa_core.utils import dedupe_keep_order
+from mmdlqa_retrieval.hybrid import top_evidence_files
 from mmdlqa_retrieval.rag import SentenceRAG
 
 from .answering import Answerer
-
-
-class RuleBasedCoordinator:
-    def plan(self, question: Question) -> list[ReasoningStep]:
-        return [
-            ReasoningStep(
-                step_id=f"{question.qid}:q0",
-                sentence=question.question,
-                purpose="answer_question",
-                metadata={"source": "original_question"},
-            )
-        ]
-
-
-class EvidenceFormatCritic:
-    def review(self, state: AgentState, candidate: AnswerCandidate) -> CriticReport:
-        issues: list[str] = []
-        available_files = {result.chunk.file_path for result in state.evidence_pool}
-        invalid_evidences = [e for e in candidate.evidences if e not in available_files]
-        if not candidate.answer:
-            issues.append("empty_answer")
-        if invalid_evidences:
-            issues.append("evidence_not_in_retrieved_pool: " + ", ".join(invalid_evidences))
-        if not state.evidence_pool and candidate.answer != "Not enough data to answer.":
-            issues.append("answered_without_evidence")
-
-        missing_queries = []
-        if not state.evidence_pool:
-            missing_queries.append(state.question.question)
-
-        return CriticReport(
-            reviewer="evidence_format_critic",
-            ok=not issues,
-            issues=issues,
-            missing_queries=missing_queries,
-        )
+from .critic import EvidenceCritic
+from .planner import QuestionPlanner
+from .reasoners import CandidateAggregator, MultiExpertReasoner
 
 
 class AgenticAnswerer:
@@ -50,41 +19,39 @@ class AgenticAnswerer:
         settings: Settings,
         rag: SentenceRAG,
         *,
-        coordinator: RuleBasedCoordinator | None = None,
-        critic: EvidenceFormatCritic | None = None,
+        planner: QuestionPlanner | None = None,
+        critic: EvidenceCritic | None = None,
         reasoner: Answerer | None = None,
+        moe: MultiExpertReasoner | None = None,
+        aggregator: CandidateAggregator | None = None,
     ):
         self.settings = settings
         self.rag = rag
-        self.coordinator = coordinator or RuleBasedCoordinator()
-        self.critic = critic or EvidenceFormatCritic()
         self.reasoner = reasoner or Answerer(settings)
+        self.planner = planner or QuestionPlanner(settings)
+        self.critic = critic or EvidenceCritic(settings)
+        self.moe = moe or MultiExpertReasoner(settings, self.reasoner)
+        self.aggregator = aggregator or CandidateAggregator(settings)
 
     def answer(self, question: Question) -> AnswerResult:
         state = AgentState(question=question)
-        state.steps = self.coordinator.plan(question)
-        for step in state.steps:
-            rag_query = RagQuery(
-                sentence=step.sentence,
-                purpose=step.purpose,
-                step_id=step.step_id,
-                metadata={"answer_type": question.answer_type},
-            )
-            state.rag_queries.append(rag_query)
-            retrieved = self.rag.search_sentence(rag_query)
-            state.evidence_pool = merge_retrieved(state.evidence_pool, retrieved)
+        state.steps = self.planner.plan(question)
+        self.retrieve_planned_steps(state)
 
-        result = self.reasoner.answer(question, state.evidence_pool)
-        candidate = AnswerCandidate(
-            source=str(result.diagnostics.get("method", "reasoner")),
-            answer=result.answer,
-            evidences=result.evidences,
-            confidence=1.0 if result.answer != "Not enough data to answer." else 0.0,
-            diagnostics=result.diagnostics,
-        )
-        state.candidates.append(candidate)
-        report = self.critic.review(state, candidate)
-        state.critic_reports.append(report)
+        selected = AnswerCandidate(source="empty", answer="Not enough data to answer.")
+        rounds = max(1, self.settings.agentic_max_rounds)
+        for round_idx in range(rounds):
+            new_candidates = self.moe.run(state)
+            state.candidates.extend(new_candidates)
+            selected = self.aggregator.choose(state)
+            report = self.critic.review(state, selected)
+            state.critic_reports.append(report)
+            if report.ok or round_idx >= rounds - 1 or not report.missing_queries:
+                break
+            state.diagnostics["retried_missing_evidence"] = True
+            self.retrieve_missing_queries(state, report.missing_queries, round_idx)
+
+        result = result_from_candidate(question, selected, state, self.settings)
         state.final_answer = result
 
         result.diagnostics = {
@@ -92,6 +59,33 @@ class AgenticAnswerer:
             "agentic": summarize_state(state),
         }
         return result
+
+    def retrieve_planned_steps(self, state: AgentState) -> None:
+        for step in state.steps:
+            query = RagQuery(
+                sentence=step.sentence,
+                purpose=step.purpose,
+                step_id=step.step_id,
+                metadata={"answer_type": state.question.answer_type, **step.metadata},
+            )
+            self.retrieve_query(state, query)
+
+    def retrieve_missing_queries(self, state: AgentState, queries: list[str], round_idx: int) -> None:
+        for i, sentence in enumerate(queries[: self.settings.agentic_max_steps]):
+            query = RagQuery(
+                sentence=sentence,
+                purpose="critic_followup",
+                step_id=f"{state.question.qid}:critic{round_idx}:{i}",
+                metadata={"answer_type": state.question.answer_type, "source": "critic"},
+            )
+            self.retrieve_query(state, query)
+
+    def retrieve_query(self, state: AgentState, query: RagQuery) -> None:
+        if query.top_k is None and should_expand_retrieval(query):
+            query.top_k = max(self.settings.retrieve_top_k, self.settings.max_files_for_question * 3, 30)
+        state.rag_queries.append(query)
+        retrieved = self.rag.search_sentence(query)
+        state.evidence_pool = merge_retrieved(state.evidence_pool, retrieved)
 
 
 def merge_retrieved(existing: list[RetrievedChunk], new: list[RetrievedChunk]) -> list[RetrievedChunk]:
@@ -103,6 +97,55 @@ def merge_retrieved(existing: list[RetrievedChunk], new: list[RetrievedChunk]) -
     return sorted(by_id.values(), key=lambda r: r.score, reverse=True)
 
 
+def result_from_candidate(
+    question: Question,
+    candidate: AnswerCandidate,
+    state: AgentState,
+    settings: Settings,
+) -> AnswerResult:
+    evidences = [item for item in candidate.evidences if is_valid_evidence_file(item, state, settings)]
+    if not evidences and candidate.answer and candidate.answer != "Not enough data to answer.":
+        evidences = top_evidence_files(state.evidence_pool, settings.max_files_for_question)
+    return AnswerResult(
+        qid=question.qid,
+        answer=candidate.answer or "Not enough data to answer.",
+        evidences=dedupe_keep_order(evidences[: settings.max_files_for_question]),
+        diagnostics={
+            "method": "agentic",
+            "selected_candidate": candidate.source,
+            "candidate_confidence": candidate.confidence,
+            "candidate_diagnostics": candidate.diagnostics,
+        },
+    )
+
+
+def should_expand_retrieval(query: RagQuery) -> bool:
+    sentence = query.sentence.casefold()
+    media_or_folder = any(
+        hint in sentence
+        for hint in [
+            "image",
+            "images",
+            "ảnh",
+            "number_image",
+            "folder",
+            "audio",
+            "video",
+            "jpg",
+            "png",
+            "m4a",
+            "*",
+        ]
+    )
+    return query.purpose in {"source_retrieval", "image_understanding", "audio_understanding"} or media_or_folder
+
+
+def is_valid_evidence_file(path: str, state: AgentState, settings: Settings) -> bool:
+    if path in {result.chunk.file_path for result in state.evidence_pool}:
+        return True
+    return (settings.raw_dir / path).exists()
+
+
 def summarize_state(state: AgentState) -> dict:
     return {
         "steps": [
@@ -111,6 +154,7 @@ def summarize_state(state: AgentState) -> dict:
                 "purpose": step.purpose,
                 "sentence": step.sentence,
                 "depends_on": step.depends_on,
+                "metadata": step.metadata,
             }
             for step in state.steps
         ],
@@ -120,18 +164,42 @@ def summarize_state(state: AgentState) -> dict:
                 "purpose": query.purpose,
                 "sentence": query.sentence,
                 "top_k": query.top_k,
+                "metadata": query.metadata,
             }
             for query in state.rag_queries
         ],
         "evidence_count": len(state.evidence_pool),
         "evidence_files": sorted({result.chunk.file_path for result in state.evidence_pool}),
+        "tool_calls": [
+            {
+                "tool_name": call.tool_name,
+                "input": call.input,
+                "output": call.output,
+                "ok": call.ok,
+                "error": call.error,
+            }
+            for call in state.tool_calls
+        ],
+        "candidates": [
+            {
+                "source": candidate.source,
+                "answer": candidate.answer,
+                "evidences": candidate.evidences,
+                "confidence": candidate.confidence,
+                "rationale": candidate.rationale,
+                "diagnostics": candidate.diagnostics,
+            }
+            for candidate in state.candidates
+        ],
         "critic_reports": [
             {
                 "reviewer": report.reviewer,
                 "ok": report.ok,
                 "issues": report.issues,
                 "missing_queries": report.missing_queries,
+                "diagnostics": report.diagnostics,
             }
             for report in state.critic_reports
         ],
+        "diagnostics": state.diagnostics,
     }

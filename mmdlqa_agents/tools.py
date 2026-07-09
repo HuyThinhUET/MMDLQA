@@ -236,6 +236,8 @@ def count_nonempty_cells_in_matching_xlsx_sheet(path: Path, hint: str | None) ->
                 target_name = name
                 break
     if target_name is None:
+        if hint:
+            return None
         target_name = next(iter(sheets))
     values = [cell for row in sheets[target_name] for cell in row if str(cell).strip()]
     return len(values) if values else None
