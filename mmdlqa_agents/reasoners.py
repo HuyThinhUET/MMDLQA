@@ -5,6 +5,8 @@ from typing import Any
 
 from mmdlqa_core.config import Settings
 from mmdlqa_core.contracts import AgentState, AnswerCandidate, ToolCallRecord
+from mmdlqa_core.metrics import BudgetExceededError
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
@@ -69,6 +71,8 @@ class PromptedReasoner:
         try:
             candidate = self._run_llm(state)
             return [candidate] if candidate else []
+        except BudgetExceededError:
+            raise
         except Exception as exc:
             return [
                 AnswerCandidate(
@@ -200,9 +204,10 @@ class CandidateAggregator:
 def build_reasoners(settings: Settings, answerer: Answerer):
     reasoners = [ToolReasoner(settings, answerer)]
     if settings.use_agentic_moe:
+        router = ModelRouter(settings)
         models = [item.strip() for item in settings.agentic_moe_models.split(",") if item.strip()]
-        exact_model = models[0] if models else None
-        synthesis_model = models[1] if len(models) > 1 else exact_model
+        exact_model = models[0] if models else router.model_for("exact")
+        synthesis_model = models[1] if len(models) > 1 else router.model_for("synthesis")
         reasoners.extend(
             [
                 PromptedReasoner(

@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterator
 
 from .config import Settings
+from .model_catalog import pricing_for_model
 
 
 class BudgetExceededError(RuntimeError):
@@ -115,7 +116,13 @@ class QuestionRunTracker:
         native_cost = float_or_none(
             usage.get("cost", usage.get("total_cost", usage.get("cost_usd", None)))
         )
-        estimated_cost = estimate_cost_usd(self.settings, prompt_tokens, completion_tokens, native_cost)
+        estimated_cost = estimate_cost_usd(
+            self.settings,
+            prompt_tokens,
+            completion_tokens,
+            native_cost,
+            model,
+        )
         self.llm_calls.append(
             LlmCallMetric(
                 model=model,
@@ -186,9 +193,13 @@ def estimate_cost_usd(
     prompt_tokens: int,
     completion_tokens: int,
     native_cost: float | None,
+    model: str = "",
 ) -> float:
     if native_cost is not None:
         return native_cost
+    model_pricing = pricing_for_model(model)
+    if model_pricing:
+        return prompt_tokens * model_pricing.prompt + completion_tokens * model_pricing.completion
     input_cost = prompt_tokens * settings.llm_input_cost_per_million_tokens / 1_000_000
     output_cost = completion_tokens * settings.llm_output_cost_per_million_tokens / 1_000_000
     return input_cost + output_cost

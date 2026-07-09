@@ -4,6 +4,8 @@ from dataclasses import asdict
 
 from mmdlqa_core.config import Settings
 from mmdlqa_core.contracts import AgentState, AnswerCandidate, CriticReport
+from mmdlqa_core.metrics import BudgetExceededError
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
 from mmdlqa_core.utils import json_dumps, normalize_text
 
@@ -12,6 +14,7 @@ class EvidenceCritic:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.llm = OpenRouterClient(settings)
+        self.models = ModelRouter(settings)
 
     def review(self, state: AgentState, candidate: AnswerCandidate) -> CriticReport:
         static = self._static_review(state, candidate)
@@ -19,6 +22,8 @@ class EvidenceCritic:
             return static
         try:
             llm_report = self._llm_review(state, candidate)
+        except BudgetExceededError:
+            raise
         except Exception as exc:
             static.diagnostics["llm_critic_error"] = repr(exc)
             return static
@@ -97,6 +102,7 @@ class EvidenceCritic:
                 },
                 {"role": "user", "content": json_dumps(payload)},
             ],
+            model=self.models.model_for("critic"),
             max_tokens=700,
         )
         issues = data.get("issues", [])
@@ -111,7 +117,7 @@ class EvidenceCritic:
             ok=ok,
             issues=[normalize_text(str(item)) for item in issues if normalize_text(str(item))],
             missing_queries=dedupe_queries(str(item) for item in missing_queries),
-            diagnostics={"model": self.settings.openrouter_model},
+            diagnostics={"model": self.models.model_for("critic")},
         )
 
 

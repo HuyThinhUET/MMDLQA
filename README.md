@@ -52,10 +52,15 @@ Set OpenRouter key:
 ```python
 import os
 os.environ["OPENROUTER_API_KEY"] = "YOUR_KEY"
-os.environ["OPENROUTER_MODEL"] = "gemma-4-26b-a4b-it"
+os.environ["MMDLQA_USE_MODEL_ROUTER"] = "1"
+os.environ["MMDLQA_AGENTIC_MAX_ROUNDS"] = "4"
+os.environ["MMDLQA_MAX_QUESTION_COST_USD"] = "0.1"
 ```
 
-Nếu OpenRouter yêu cầu model slug có prefix provider, chỉ cần đổi `OPENROUTER_MODEL`, không cần sửa code.
+Mặc định pipeline dùng model routing theo vai trò: planner/rerank/exact dùng Gemini Flash Lite,
+synthesis/critic dùng DeepSeek V3.1, coder dùng Qwen3 Coder Flash, vision dùng Gemini Flash.
+Nếu muốn ép toàn bộ workflow về một model duy nhất, set `MMDLQA_USE_MODEL_ROUTER=0`
+và đổi `OPENROUTER_MODEL`.
 
 ## Run
 
@@ -139,13 +144,21 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_AGENTIC_PLANNER=0`: dùng rule-based planner thay vì LLM planner.
 - `MMDLQA_USE_AGENTIC_MOE=0`: chỉ dùng deterministic tools + fallback, không gọi MoE reasoners.
 - `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.
-- `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=2`: giới hạn planning/retry.
-- `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, dùng model riêng cho các expert.
+- `MMDLQA_USE_MODEL_ROUTER=1`: bật chọn model theo vai trò thay vì một model chung.
+- `MMDLQA_PLANNER_MODEL=google/gemini-2.5-flash-lite`: model tách câu hỏi thành steps.
+- `MMDLQA_RERANK_MODEL=google/gemini-2.5-flash-lite`: model rerank chunks.
+- `MMDLQA_EXACT_MODEL=google/gemini-2.5-flash-lite`: expert exact-match rẻ/nhanh.
+- `MMDLQA_SYNTHESIS_MODEL=deepseek/deepseek-chat-v3.1`: expert tổng hợp multi-hop.
+- `MMDLQA_CRITIC_MODEL=deepseek/deepseek-chat-v3.1`: agent phản biện evidence.
+- `MMDLQA_CODER_MODEL=qwen/qwen3-coder-flash`: model dành cho coder/calculation agent khi mở rộng.
+- `MMDLQA_VISION_MODEL=google/gemini-2.5-flash`: model nhìn ảnh/video frame.
+- `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=4`: giới hạn planning/retry, mặc định loop khoảng 3-5 vòng.
+- `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, override riêng exact/synthesis expert.
 - `MMDLQA_MAX_QUESTION_SECONDS=0`: giới hạn thời gian mỗi câu; `0` là không giới hạn.
 - `MMDLQA_MAX_QUESTION_LLM_CALLS=0`: giới hạn số LLM calls mỗi câu; `0` là không giới hạn.
-- `MMDLQA_MAX_QUESTION_COST_USD=0`: giới hạn cost estimate mỗi câu; `0` là không giới hạn.
+- `MMDLQA_MAX_QUESTION_COST_USD=0.1`: giới hạn cost estimate mỗi câu; `0` là không giới hạn.
 - `MMDLQA_MAX_QUESTION_RAG_QUERIES=0`: giới hạn số RAG query mỗi câu; `0` là không giới hạn.
-- `MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS=0`, `MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS=0`: giá tự cấu hình để estimate cost nếu provider không trả cost.
+- `MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS=0`, `MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS=0`: giá fallback nếu provider không trả cost và model không có trong bảng giá local.
 - `MMDLQA_RETRIEVE_TOP_K=8`, `MMDLQA_RERANK_TOP_K=5`, `MMDLQA_MAX_CONTEXT_CHARS=16000`: giảm token.
 
 Mỗi câu hỏi ghi metrics vào `diagnostics.jsonl` trong `answer.diagnostics.metrics`: elapsed time, stage timings, LLM calls, token usage, estimated cost, và trạng thái limit. `run_summary.json` có phần tổng hợp `metrics` cho toàn run.

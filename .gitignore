@@ -4,10 +4,7 @@ __pycache__/
 .env
 .ipynb_checkpoints/
 
-output/cache/
-output/*.jsonl
-output/*.json
-output/submission.csv
+output/
 
 input/
 

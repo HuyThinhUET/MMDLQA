@@ -3,6 +3,7 @@ from __future__ import annotations
 from mmdlqa_core.config import Settings
 from mmdlqa_core.contracts import AgentState, AnswerCandidate, RagQuery
 from mmdlqa_core.metrics import BudgetExceededError, current_tracker
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order
 from mmdlqa_retrieval.hybrid import top_evidence_files
@@ -27,6 +28,7 @@ class AgenticAnswerer:
         aggregator: CandidateAggregator | None = None,
     ):
         self.settings = settings
+        self.models = ModelRouter(settings)
         self.rag = rag
         self.reasoner = reasoner or Answerer(settings)
         self.planner = planner or QuestionPlanner(settings)
@@ -88,6 +90,7 @@ class AgenticAnswerer:
 
         result.diagnostics = {
             **result.diagnostics,
+            "model_routing": self.models.snapshot(),
             "agentic": summarize_state(state),
         }
         return result

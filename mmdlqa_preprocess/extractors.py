@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from mmdlqa_core.config import Settings
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient, image_part_from_path
 from mmdlqa_core.schema import Chunk, FileRecord
 from mmdlqa_core.utils import chunk_text, normalize_text, relative_posix, stable_id
@@ -405,6 +406,7 @@ def extract_image(path: Path, settings: Settings, llm: OpenRouterClient | None) 
                         ],
                     }
                 ],
+                model=ModelRouter(settings).model_for("vision"),
                 max_tokens=700,
             )
             parts.append("Vision caption:\n" + caption)

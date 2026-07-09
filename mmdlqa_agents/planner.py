@@ -4,6 +4,8 @@ import re
 from typing import Any
 
 from mmdlqa_core.config import Settings
+from mmdlqa_core.metrics import BudgetExceededError
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
 from mmdlqa_core.schema import Question
 from mmdlqa_core.contracts import ReasoningStep
@@ -14,6 +16,7 @@ class QuestionPlanner:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.llm = OpenRouterClient(settings)
+        self.models = ModelRouter(settings)
 
     def plan(self, question: Question) -> list[ReasoningStep]:
         if self.settings.use_agentic_planner and self.llm.available:
@@ -21,6 +24,8 @@ class QuestionPlanner:
                 steps = self._plan_with_llm(question)
                 if steps:
                     return steps[: self.settings.agentic_max_steps]
+            except BudgetExceededError:
+                raise
             except Exception:
                 pass
         return self._plan_with_rules(question)
@@ -47,6 +52,7 @@ class QuestionPlanner:
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(payload)},
             ],
+            model=self.models.model_for("planner"),
             max_tokens=900,
         )
         raw_steps = data.get("steps", [])

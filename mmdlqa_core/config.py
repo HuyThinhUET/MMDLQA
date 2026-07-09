@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .model_catalog import DEFAULT_ROLE_MODELS
+
 
 def _bool_env(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -33,11 +35,12 @@ class Settings:
 
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "gemma-4-26b-a4b-it"
+    openrouter_model: str = DEFAULT_ROLE_MODELS["default"]
     openrouter_referer: str = "https://github.com/HuyThinhUET/MMDLQA"
-    openrouter_app_name: str = "MMDLQA Baseline"
+    openrouter_app_name: str = "MMDLQA Agentic QA"
 
     use_llm: bool = True
+    use_model_router: bool = True
     use_llm_summaries: bool = False
     use_llm_rerank: bool = True
     use_vision_llm: bool = True
@@ -46,6 +49,13 @@ class Settings:
     use_agentic_planner: bool = True
     use_agentic_moe: bool = True
     use_agentic_critic: bool = True
+    planner_model: str = DEFAULT_ROLE_MODELS["planner"]
+    rerank_model: str = DEFAULT_ROLE_MODELS["rerank"]
+    exact_model: str = DEFAULT_ROLE_MODELS["exact"]
+    synthesis_model: str = DEFAULT_ROLE_MODELS["synthesis"]
+    critic_model: str = DEFAULT_ROLE_MODELS["critic"]
+    coder_model: str = DEFAULT_ROLE_MODELS["coder"]
+    vision_model: str = DEFAULT_ROLE_MODELS["vision"]
 
     chunk_size_chars: int = 3200
     chunk_overlap_chars: int = 450
@@ -57,11 +67,11 @@ class Settings:
     max_image_side: int = 1280
     video_frame_count: int = 6
     agentic_max_steps: int = 5
-    agentic_max_rounds: int = 2
+    agentic_max_rounds: int = 4
     agentic_moe_models: str = ""
     max_question_seconds: float = 0.0
     max_question_llm_calls: int = 0
-    max_question_cost_usd: float = 0.0
+    max_question_cost_usd: float = 0.1
     max_question_rag_queries: int = 0
     llm_input_cost_per_million_tokens: float = 0.0
     llm_output_cost_per_million_tokens: float = 0.0
@@ -84,12 +94,13 @@ class Settings:
             submission_path=Path(os.getenv("MMDLQA_SUBMISSION", "output/submission.csv")),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
             openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-            openrouter_model=os.getenv("OPENROUTER_MODEL", "gemma-4-26b-a4b-it"),
+            openrouter_model=os.getenv("OPENROUTER_MODEL", DEFAULT_ROLE_MODELS["default"]),
             openrouter_referer=os.getenv(
                 "OPENROUTER_REFERER", "https://github.com/HuyThinhUET/MMDLQA"
             ),
-            openrouter_app_name=os.getenv("OPENROUTER_APP_NAME", "MMDLQA Baseline"),
+            openrouter_app_name=os.getenv("OPENROUTER_APP_NAME", "MMDLQA Agentic QA"),
             use_llm=_bool_env("MMDLQA_USE_LLM", True),
+            use_model_router=_bool_env("MMDLQA_USE_MODEL_ROUTER", True),
             use_llm_summaries=_bool_env("MMDLQA_USE_LLM_SUMMARIES", False),
             use_llm_rerank=_bool_env("MMDLQA_USE_LLM_RERANK", True),
             use_vision_llm=_bool_env("MMDLQA_USE_VISION_LLM", True),
@@ -98,6 +109,13 @@ class Settings:
             use_agentic_planner=_bool_env("MMDLQA_USE_AGENTIC_PLANNER", True),
             use_agentic_moe=_bool_env("MMDLQA_USE_AGENTIC_MOE", True),
             use_agentic_critic=_bool_env("MMDLQA_USE_AGENTIC_CRITIC", True),
+            planner_model=os.getenv("MMDLQA_PLANNER_MODEL", DEFAULT_ROLE_MODELS["planner"]),
+            rerank_model=os.getenv("MMDLQA_RERANK_MODEL", DEFAULT_ROLE_MODELS["rerank"]),
+            exact_model=os.getenv("MMDLQA_EXACT_MODEL", DEFAULT_ROLE_MODELS["exact"]),
+            synthesis_model=os.getenv("MMDLQA_SYNTHESIS_MODEL", DEFAULT_ROLE_MODELS["synthesis"]),
+            critic_model=os.getenv("MMDLQA_CRITIC_MODEL", DEFAULT_ROLE_MODELS["critic"]),
+            coder_model=os.getenv("MMDLQA_CODER_MODEL", DEFAULT_ROLE_MODELS["coder"]),
+            vision_model=os.getenv("MMDLQA_VISION_MODEL", DEFAULT_ROLE_MODELS["vision"]),
             chunk_size_chars=int(os.getenv("MMDLQA_CHUNK_SIZE_CHARS", "3200")),
             chunk_overlap_chars=int(os.getenv("MMDLQA_CHUNK_OVERLAP_CHARS", "450")),
             retrieve_top_k=int(os.getenv("MMDLQA_RETRIEVE_TOP_K", "12")),
@@ -108,11 +126,11 @@ class Settings:
             max_image_side=int(os.getenv("MMDLQA_MAX_IMAGE_SIDE", "1280")),
             video_frame_count=int(os.getenv("MMDLQA_VIDEO_FRAME_COUNT", "6")),
             agentic_max_steps=int(os.getenv("MMDLQA_AGENTIC_MAX_STEPS", "5")),
-            agentic_max_rounds=int(os.getenv("MMDLQA_AGENTIC_MAX_ROUNDS", "2")),
+            agentic_max_rounds=int(os.getenv("MMDLQA_AGENTIC_MAX_ROUNDS", "4")),
             agentic_moe_models=os.getenv("MMDLQA_AGENTIC_MOE_MODELS", ""),
             max_question_seconds=_float_env("MMDLQA_MAX_QUESTION_SECONDS", 0.0),
             max_question_llm_calls=int(os.getenv("MMDLQA_MAX_QUESTION_LLM_CALLS", "0")),
-            max_question_cost_usd=_float_env("MMDLQA_MAX_QUESTION_COST_USD", 0.0),
+            max_question_cost_usd=_float_env("MMDLQA_MAX_QUESTION_COST_USD", 0.1),
             max_question_rag_queries=int(os.getenv("MMDLQA_MAX_QUESTION_RAG_QUERIES", "0")),
             llm_input_cost_per_million_tokens=_float_env("MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS", 0.0),
             llm_output_cost_per_million_tokens=_float_env("MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS", 0.0),

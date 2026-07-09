@@ -53,6 +53,7 @@ class OpenRouterClient:
         }
         start = time.perf_counter()
         usage: dict[str, Any] = {}
+        actual_model = selected_model
         try:
             resp = requests.post(
                 url,
@@ -66,11 +67,12 @@ class OpenRouterClient:
             usage = data.get("usage") or {}
             if not isinstance(usage, dict):
                 usage = {}
+            actual_model = str(data.get("model") or selected_model)
             content = data["choices"][0]["message"].get("content", "")
         except Exception as exc:
             if tracker:
                 tracker.record_llm_call(
-                    model=selected_model,
+                    model=actual_model,
                     elapsed_sec=time.perf_counter() - start,
                     ok=False,
                     usage=usage,
@@ -79,7 +81,7 @@ class OpenRouterClient:
             raise
         if tracker:
             tracker.record_llm_call(
-                model=selected_model,
+                model=actual_model,
                 elapsed_sec=time.perf_counter() - start,
                 ok=True,
                 usage=usage,

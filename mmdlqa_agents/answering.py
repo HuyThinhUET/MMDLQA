@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from mmdlqa_core.config import Settings
+from mmdlqa_core.metrics import BudgetExceededError
+from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient, image_part_from_path
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
@@ -19,6 +21,7 @@ class Answerer:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.llm = OpenRouterClient(settings)
+        self.models = ModelRouter(settings)
         self.tools = DeterministicToolbox(settings)
 
     def answer(self, question: Question, retrieved: list[RetrievedChunk]) -> AnswerResult:
@@ -41,6 +44,8 @@ class Answerer:
         if self.llm.available:
             try:
                 return self.answer_with_llm(question, retrieved)
+            except BudgetExceededError:
+                raise
             except Exception as exc:
                 fallback = self.fallback_answer(question, retrieved)
                 fallback.diagnostics["llm_error"] = repr(exc)
@@ -92,6 +97,7 @@ class Answerer:
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(user)},
             ],
+            model=self.models.model_for("synthesis"),
             max_tokens=1200,
         )
         answer = normalize_answer(str(data.get("answer", "")), exact)
@@ -106,7 +112,11 @@ class Answerer:
             qid=question.qid,
             answer=answer or "Not enough data to answer.",
             evidences=dedupe_keep_order(evidences),
-            diagnostics={"method": "llm", "context_chunks": len(narrowed)},
+            diagnostics={
+                "method": "llm",
+                "model": self.models.model_for("synthesis"),
+                "context_chunks": len(narrowed),
+            },
         )
 
     def rerank(self, question: Question, retrieved: list[RetrievedChunk]) -> list[RetrievedChunk]:
@@ -137,6 +147,7 @@ class Answerer:
                         "content": json_dumps({"question": question.question, "candidates": items}),
                     },
                 ],
+                model=self.models.model_for("rerank"),
                 max_tokens=500,
             )
             selected = data.get("selected_indices", [])
@@ -148,6 +159,8 @@ class Answerer:
                 if cand not in ranked:
                     ranked.append(cand)
             return ranked[: self.settings.rerank_top_k]
+        except BudgetExceededError:
+            raise
         except Exception:
             return candidates[: self.settings.rerank_top_k]
 
@@ -198,13 +211,19 @@ class Answerer:
             content.append({"type": "text", "text": f"Image file: {path.name}"})
             content.append(image_part_from_path(path, self.settings.max_image_side))
         try:
-            data = self.llm.json_chat([{"role": "user", "content": content}], max_tokens=1200)
+            data = self.llm.json_chat(
+                [{"role": "user", "content": content}],
+                model=self.models.model_for("vision"),
+                max_tokens=1200,
+            )
             return AnswerResult(
                 qid=question.qid,
                 answer=normalize_answer(str(data.get("answer", "")), question.answer_type == "exact_match"),
                 evidences=dedupe_keep_order(file_paths),
-                diagnostics={"method": "vision_group"},
+                diagnostics={"method": "vision_group", "model": self.models.model_for("vision")},
             )
+        except BudgetExceededError:
+            raise
         except Exception:
             return None
 
