@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mmdlqa_baseline.config import Settings
-from mmdlqa_baseline.pipeline import build_only
+from mmdlqa_core.config import Settings
+from mmdlqa_orchestration.pipeline import build_only
 
 
 def main() -> None:

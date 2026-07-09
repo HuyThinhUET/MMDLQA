@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
-from .config import Settings
+from mmdlqa_core.config import Settings
+from mmdlqa_core.openrouter import OpenRouterClient
+from mmdlqa_core.schema import Chunk, FileRecord
+from mmdlqa_core.utils import read_jsonl, write_jsonl
+
 from .extractors import extract_file
-from .openrouter import OpenRouterClient
-from .schema import Chunk, FileRecord
-from .utils import read_jsonl, write_jsonl
 
 
 def index_paths(settings: Settings) -> tuple[Path, Path]:

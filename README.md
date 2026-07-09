@@ -71,6 +71,12 @@ Chạy đầy đủ:
 python script/run_pipeline.py --rebuild-index
 ```
 
+Chạy workflow agentic shell mới, hiện vẫn dùng reasoner baseline ở phía sau nhưng RAG boundary đã là một `sentence`:
+
+```bash
+MMDLQA_USE_LLM=0 python script/run_agentic.py --limit 5
+```
+
 Đánh giá nhanh các câu `exact_match` trong sample có groundtruth:
 
 ```bash
@@ -107,6 +113,17 @@ output/cache/chunks.jsonl
 5. Optional LLM rerank top chunks.
 6. Answer JSON bằng OpenRouter, ép evidence chỉ lấy từ file đã retrieve.
 7. Normalize exact-match answer và xuất CSV.
+
+## Agentic Refactor
+
+Code đã được tách theo ranh giới phát triển thay vì gom trong một package baseline:
+
+- `mmdlqa_core/`: schema, config, question loader, OpenRouter client, utility và contract chung như `RagQuery`, `ReasoningStep`, `AgentState`.
+- `mmdlqa_preprocess/`: xử lý offline data lake, extract file, chunk, và ghi knowledge library/cache.
+- `mmdlqa_retrieval/`: search/RAG; `SentenceRAG` nhận một câu truy vấn tự nhiên rồi trả về chunks liên quan.
+- `mmdlqa_agents/`: deterministic tools, baseline reasoner, workflow shell `Coordinator -> RAG -> Reasoner -> Critic`.
+- `mmdlqa_orchestration/`: runner pipeline nối preprocess, retrieval và agent để xuất submission.
+- `script/run_agentic.py`: entrypoint chạy song song với baseline runner.
 
 ## Cost Controls
 

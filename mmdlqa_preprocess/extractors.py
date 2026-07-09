@@ -11,10 +11,10 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from .config import Settings
-from .openrouter import OpenRouterClient, image_part_from_path
-from .schema import Chunk, FileRecord
-from .utils import chunk_text, normalize_text, relative_posix, stable_id
+from mmdlqa_core.config import Settings
+from mmdlqa_core.openrouter import OpenRouterClient, image_part_from_path
+from mmdlqa_core.schema import Chunk, FileRecord
+from mmdlqa_core.utils import chunk_text, normalize_text, relative_posix, stable_id
 
 TEXT_SUFFIXES = {
     ".txt",

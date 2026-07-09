@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mmdlqa_baseline.config import Settings
-from mmdlqa_baseline.questions import load_questions
-from mmdlqa_baseline.utils import normalize_text
+from mmdlqa_core.config import Settings
+from mmdlqa_core.questions import load_questions
+from mmdlqa_core.utils import normalize_text
 
 
 def norm(value: str) -> str:

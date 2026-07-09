@@ -9,11 +9,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mmdlqa_core.config import Settings
-from mmdlqa_orchestration.pipeline import run_pipeline
+from mmdlqa_orchestration.pipeline import run_agentic_pipeline
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run baseline QA and write submission.csv.")
+    parser = argparse.ArgumentParser(description="Run agentic QA workflow and write submission.csv.")
     parser.add_argument("--questions", default=None, help="Questions .xlsx/.csv path.")
     parser.add_argument("--raw-dir", default=None, help="Path to raw data lake directory.")
     parser.add_argument("--output-dir", default=None, help="Output directory.")
@@ -34,7 +34,7 @@ def main() -> None:
     if args.submission:
         settings.submission_path = Path(args.submission)
 
-    run_pipeline(settings, rebuild_index=args.rebuild_index, limit=args.limit)
+    run_agentic_pipeline(settings, rebuild_index=args.rebuild_index, limit=args.limit)
     print(f"Wrote {settings.submission_path}")
 
 

@@ -5,9 +5,9 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .config import Settings
-from .schema import Chunk, Question, RetrievedChunk
-from .utils import dedupe_keep_order, tokenize
+from mmdlqa_core.config import Settings
+from mmdlqa_core.schema import Chunk, Question, RetrievedChunk
+from mmdlqa_core.utils import dedupe_keep_order, tokenize
 
 
 class HybridRetriever:
