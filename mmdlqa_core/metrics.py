@@ -153,6 +153,17 @@ class QuestionRunTracker:
     def total_estimated_cost_usd(self) -> float:
         return round(sum(call.estimated_cost_usd for call in self.llm_calls), 8)
 
+    @property
+    def failed_llm_calls(self) -> int:
+        return sum(1 for call in self.llm_calls if not call.ok)
+
+    @property
+    def first_llm_error(self) -> str:
+        for call in self.llm_calls:
+            if not call.ok and call.error:
+                return call.error
+        return ""
+
     def snapshot(self) -> dict[str, Any]:
         self.refresh_elapsed()
         return {
@@ -162,6 +173,8 @@ class QuestionRunTracker:
             "stage_count": len(self.stages),
             "stages": [asdict(stage) for stage in self.stages],
             "llm_call_count": len(self.llm_calls),
+            "failed_llm_call_count": self.failed_llm_calls,
+            "first_llm_error": self.first_llm_error,
             "llm_calls": [asdict(call) for call in self.llm_calls],
             "total_prompt_tokens": self.total_prompt_tokens,
             "total_completion_tokens": self.total_completion_tokens,
@@ -228,6 +241,7 @@ def aggregate_question_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "question_count": len(metrics),
         "total_elapsed_sec": round(sum(float(m.get("elapsed_sec", 0.0)) for m in metrics), 4),
         "total_llm_calls": sum(int(m.get("llm_call_count", 0)) for m in metrics),
+        "total_failed_llm_calls": sum(int(m.get("failed_llm_call_count", 0)) for m in metrics),
         "total_prompt_tokens": sum(int(m.get("total_prompt_tokens", 0)) for m in metrics),
         "total_completion_tokens": sum(int(m.get("total_completion_tokens", 0)) for m in metrics),
         "total_tokens": sum(int(m.get("total_tokens", 0)) for m in metrics),

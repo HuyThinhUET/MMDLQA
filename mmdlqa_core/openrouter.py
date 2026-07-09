@@ -69,6 +69,7 @@ class OpenRouterClient:
                 usage = {}
             actual_model = str(data.get("model") or selected_model)
             content = data["choices"][0]["message"].get("content", "")
+            usage = ensure_usage_estimate(usage, messages, content)
         except Exception as exc:
             if tracker:
                 tracker.record_llm_call(
@@ -135,3 +136,35 @@ def image_part_from_path(path: Path, max_side: int = 1280) -> dict[str, Any]:
         "type": "image_url",
         "image_url": {"url": f"data:{mime};base64,{encoded}"},
     }
+
+
+def ensure_usage_estimate(
+    usage: dict[str, Any],
+    messages: list[dict[str, Any]],
+    content: str,
+) -> dict[str, Any]:
+    prompt_tokens = int_token_value(usage.get("prompt_tokens", usage.get("input_tokens", 0)))
+    completion_tokens = int_token_value(usage.get("completion_tokens", usage.get("output_tokens", 0)))
+    total_tokens = int_token_value(usage.get("total_tokens", prompt_tokens + completion_tokens))
+    if total_tokens > 0:
+        return usage
+    prompt_tokens = estimate_tokens(json.dumps(messages, ensure_ascii=False))
+    completion_tokens = estimate_tokens(content)
+    return {
+        **usage,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "usage_estimated": True,
+    }
+
+
+def estimate_tokens(text: str) -> int:
+    return max(1, int(len(text or "") / 4))
+
+
+def int_token_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0

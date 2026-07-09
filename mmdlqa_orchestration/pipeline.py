@@ -26,6 +26,7 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
     answerer = Answerer(settings)
     output_rows = []
     diagnostics = []
+    print_run_preflight(settings)
 
     for question in questions:
         with QuestionRunTracker(settings, question.qid) as tracker:
@@ -98,6 +99,7 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
     answerer = AgenticAnswerer(settings, rag)
     output_rows = []
     diagnostics = []
+    print_run_preflight(settings)
 
     for question in questions:
         with QuestionRunTracker(settings, question.qid) as tracker:
@@ -135,9 +137,32 @@ def print_question_progress(settings: Settings, result) -> None:
     metrics = result.diagnostics.get("metrics", {})
     elapsed = float(metrics.get("elapsed_sec", 0.0) or 0.0)
     calls = int(metrics.get("llm_call_count", 0) or 0)
+    failed = int(metrics.get("failed_llm_call_count", 0) or 0)
     cost = float(metrics.get("total_estimated_cost_usd", 0.0) or 0.0)
     answer = str(result.answer).replace("\n", " ")[:100]
     print(
-        f"[qid={result.qid}] {elapsed:.2f}s | llm_calls={calls} | cost=${cost:.5f} | answer={answer}",
+        f"[qid={result.qid}] {elapsed:.2f}s | llm_calls={calls} | failed_llm={failed} | "
+        f"cost=${cost:.5f} | answer={answer}",
         flush=True,
     )
+    if failed and metrics.get("first_llm_error"):
+        print(f"[qid={result.qid} llm_error] {str(metrics['first_llm_error'])[:500]}", flush=True)
+
+
+def print_run_preflight(settings: Settings) -> None:
+    if not settings.print_question_metrics:
+        return
+    key_present = bool(settings.openrouter_api_key)
+    llm_available = key_present and settings.use_llm
+    print(
+        "[run] "
+        f"use_llm={settings.use_llm} | openrouter_key_present={key_present} | "
+        f"llm_available={llm_available} | evidence_scanner={settings.use_evidence_scanner}",
+        flush=True,
+    )
+    if not llm_available:
+        print(
+            "[run warning] LLM is not available. This is a dry-run style execution; "
+            "planner/MoE/critic/evidence scanner LLM calls will be skipped.",
+            flush=True,
+        )

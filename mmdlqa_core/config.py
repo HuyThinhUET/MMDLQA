@@ -86,8 +86,8 @@ class Settings:
     evidence_scan_max_files: int = 24
     evidence_scan_chunks_per_file: int = 3
     evidence_scan_max_chars_per_file: int = 2600
-    evidence_scan_batch_size: int = 4
-    evidence_scan_irrelevant_patience: int = 6
+    evidence_scan_batch_size: int = 8
+    evidence_scan_irrelevant_patience: int = 5
     print_question_metrics: bool = False
     max_question_seconds: float = 0.0
     max_question_llm_calls: int = 0
@@ -167,8 +167,8 @@ class Settings:
             evidence_scan_max_files=int(os.getenv("MMDLQA_EVIDENCE_SCAN_MAX_FILES", "24")),
             evidence_scan_chunks_per_file=int(os.getenv("MMDLQA_EVIDENCE_SCAN_CHUNKS_PER_FILE", "3")),
             evidence_scan_max_chars_per_file=int(os.getenv("MMDLQA_EVIDENCE_SCAN_MAX_CHARS_PER_FILE", "2600")),
-            evidence_scan_batch_size=int(os.getenv("MMDLQA_EVIDENCE_SCAN_BATCH_SIZE", "4")),
-            evidence_scan_irrelevant_patience=int(os.getenv("MMDLQA_EVIDENCE_SCAN_IRRELEVANT_PATIENCE", "6")),
+            evidence_scan_batch_size=int(os.getenv("MMDLQA_EVIDENCE_SCAN_BATCH_SIZE", "8")),
+            evidence_scan_irrelevant_patience=int(os.getenv("MMDLQA_EVIDENCE_SCAN_IRRELEVANT_PATIENCE", "5")),
             print_question_metrics=_bool_env("MMDLQA_PRINT_QUESTION_METRICS", False),
             max_question_seconds=_float_env("MMDLQA_MAX_QUESTION_SECONDS", 0.0),
             max_question_llm_calls=int(os.getenv("MMDLQA_MAX_QUESTION_LLM_CALLS", "0")),

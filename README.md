@@ -66,8 +66,8 @@ os.environ["MMDLQA_AGENTIC_MAX_ROUNDS"] = "4"
 os.environ["MMDLQA_MAX_QUESTION_COST_USD"] = "0.1"
 ```
 
-Mặc định pipeline dùng model routing theo vai trò: planner/rerank/exact dùng Gemini Flash Lite,
-synthesis/critic dùng DeepSeek V3.1, coder dùng Qwen3 Coder Flash, vision dùng Gemini Flash.
+Mặc định pipeline dùng strong model routing theo vai trò: planner dùng GPT-5.6 Terra, rerank/scan nhẹ dùng GPT-5.6 Luna,
+exact/critic/document/vision dùng Claude Sonnet 5, synthesis dùng GPT-5.6 Sol Pro, coder/table scan dùng Grok 4.5.
 Nếu muốn ép toàn bộ workflow về một model duy nhất, set `MMDLQA_USE_MODEL_ROUTER=0`
 và đổi `OPENROUTER_MODEL`.
 
@@ -168,14 +168,14 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_RERANK_CANDIDATE_K=36`, `MMDLQA_RERANK_TOP_K=12`: cho reranker nhìn nhiều candidate hơn sau scanner.
 - `MMDLQA_USE_CODER_PLANNER=0`: bật LLM coder planner khi set `1`; mặc định tắt để không tăng cost.
 - `MMDLQA_USE_MODEL_ROUTER=1`: bật chọn model theo vai trò thay vì một model chung.
-- `MMDLQA_PLANNER_MODEL=google/gemini-2.5-flash-lite`: model tách câu hỏi thành steps.
-- `MMDLQA_RERANK_MODEL=google/gemini-2.5-flash-lite`: model rerank chunks.
-- `MMDLQA_EXACT_MODEL=google/gemini-2.5-flash-lite`: expert exact-match rẻ/nhanh.
-- `MMDLQA_SYNTHESIS_MODEL=deepseek/deepseek-chat-v3.1`: expert tổng hợp multi-hop.
-- `MMDLQA_CRITIC_MODEL=deepseek/deepseek-chat-v3.1`: agent phản biện evidence.
-- `MMDLQA_CODER_MODEL=qwen/qwen3-coder-flash`: model dành cho coder/calculation agent khi mở rộng.
-- `MMDLQA_VISION_MODEL=google/gemini-2.5-flash`: model nhìn ảnh/video frame.
-- `MMDLQA_SCAN_TEXT_MODEL=google/gemini-2.5-flash-lite`, `MMDLQA_SCAN_TABLE_MODEL=qwen/qwen3-coder-flash`, `MMDLQA_SCAN_DOCUMENT_MODEL=deepseek/deepseek-chat-v3.1`, `MMDLQA_SCAN_IMAGE_MODEL=google/gemini-2.5-flash`: model trích xuất evidence theo modality.
+- `MMDLQA_PLANNER_MODEL=openai/gpt-5.6-terra`: model tách câu hỏi thành steps.
+- `MMDLQA_RERANK_MODEL=openai/gpt-5.6-luna`: model rerank chunks.
+- `MMDLQA_EXACT_MODEL=anthropic/claude-sonnet-5`: expert exact-match mạnh hơn.
+- `MMDLQA_SYNTHESIS_MODEL=openai/gpt-5.6-sol-pro`: expert tổng hợp multi-hop mạnh nhất trong profile.
+- `MMDLQA_CRITIC_MODEL=anthropic/claude-sonnet-5`: agent phản biện evidence.
+- `MMDLQA_CODER_MODEL=x-ai/grok-4.5`: model dành cho coder/calculation agent khi mở rộng.
+- `MMDLQA_VISION_MODEL=anthropic/claude-sonnet-5`: model nhìn ảnh/video frame.
+- `MMDLQA_SCAN_TEXT_MODEL=openai/gpt-5.6-luna`, `MMDLQA_SCAN_TABLE_MODEL=x-ai/grok-4.5`, `MMDLQA_SCAN_DOCUMENT_MODEL=anthropic/claude-sonnet-5`, `MMDLQA_SCAN_IMAGE_MODEL=anthropic/claude-sonnet-5`: model trích xuất evidence theo modality.
 - `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=4`: giới hạn planning/retry, mặc định loop khoảng 3-5 vòng.
 - `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, override riêng exact/synthesis expert.
 - `MMDLQA_MAX_QUESTION_SECONDS=0`: giới hạn thời gian mỗi câu; `0` là không giới hạn.
