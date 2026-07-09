@@ -147,12 +147,21 @@ def validate_rerank_output(candidate_count: int) -> Validator:
     return validate
 
 
-def validate_answer_output(valid_files: set[str], *, require_claims: bool = True) -> Validator:
+def validate_answer_output(
+    valid_files: set[str],
+    *,
+    require_claims: bool = True,
+    allow_insufficient: bool = True,
+) -> Validator:
     def validate(data: dict[str, Any]) -> ValidationResult:
         errors: list[str] = []
         answer = data.get("answer")
         if not isinstance(answer, str) or not normalize_text(answer):
             errors.append("answer must be a non-empty string")
+        if answer == "Not enough data to answer." and not allow_insufficient and valid_files:
+            errors.append(
+                "answer must be a best-effort answer because at least one valid context file is available"
+            )
         evidences = data.get("evidences")
         if not isinstance(evidences, list):
             errors.append("evidences must be a list of file paths")

@@ -21,7 +21,7 @@ class EvidenceCritic:
         self.models = ModelRouter(settings)
 
     def review(self, state: AgentState, candidate: AnswerCandidate) -> CriticReport:
-        static = self._static_review(state, candidate)
+        static = self.static_review(state, candidate)
         if not (self.settings.use_agentic_critic and self.llm.available and state.evidence_pool):
             return static
         try:
@@ -33,7 +33,7 @@ class EvidenceCritic:
             return static
         return merge_reports(static, llm_report)
 
-    def _static_review(self, state: AgentState, candidate: AnswerCandidate) -> CriticReport:
+    def static_review(self, state: AgentState, candidate: AnswerCandidate) -> CriticReport:
         issues: list[str] = []
         missing_queries: list[str] = []
         invalid_evidences = [e for e in candidate.evidences if not self._valid_evidence_file(e, state)]

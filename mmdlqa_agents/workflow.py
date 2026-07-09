@@ -5,7 +5,7 @@ from mmdlqa_core.contracts import AgentState, AnswerCandidate, RagQuery
 from mmdlqa_core.metrics import BudgetExceededError, current_tracker
 from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
-from mmdlqa_core.utils import dedupe_keep_order
+from mmdlqa_core.utils import dedupe_keep_order, normalize_text
 from mmdlqa_retrieval.hybrid import top_evidence_files
 from mmdlqa_retrieval.rag import SentenceRAG
 
@@ -89,6 +89,13 @@ class AgenticAnswerer:
                 state.diagnostics["limit_stop"] = str(exc)
                 break
 
+        selected = self.aggregator.ensure_best_effort(state, selected)
+        if selected.source == "best_effort_static" and all(c.source != selected.source for c in state.candidates):
+            state.candidates.append(selected)
+        final_static_report = self.critic.static_review(state, selected)
+        final_static_report.diagnostics["final_best_effort_review"] = True
+        state.critic_reports.append(final_static_report)
+
         result = result_from_candidate(question, selected, state, self.settings)
         state.evidence_ledger = selected.claim_evidence
         state.final_answer = result
@@ -170,9 +177,12 @@ def result_from_candidate(
     evidences = [item for item in candidate.evidences if is_valid_evidence_file(item, state, settings)]
     if not evidences and candidate.answer and candidate.answer != "Not enough data to answer.":
         evidences = top_evidence_files(state.evidence_pool, settings.max_files_for_question)
+    answer = candidate.answer or "Not enough data to answer."
+    if settings.force_best_effort_answer and answer == "Not enough data to answer." and evidences:
+        answer = fallback_answer_from_valid_evidence(question, state, evidences)
     return AnswerResult(
         qid=question.qid,
-        answer=candidate.answer or "Not enough data to answer.",
+        answer=answer,
         evidences=dedupe_keep_order(evidences[: settings.max_files_for_question]),
         diagnostics={
             "method": "agentic",
@@ -209,6 +219,41 @@ def is_valid_evidence_file(path: str, state: AgentState, settings: Settings) -> 
     if path in {result.chunk.file_path for result in state.evidence_pool}:
         return True
     return (settings.raw_dir / path).exists()
+
+
+def fallback_answer_from_valid_evidence(question: Question, state: AgentState, evidences: list[str]) -> str:
+    for result in state.evidence_pool:
+        if result.chunk.file_path not in evidences:
+            continue
+        text = normalize_text(result.chunk.text)
+        if text:
+            line = best_line_for_question(question.question, text)
+            if question.answer_type.casefold() == "exact_match":
+                import re
+
+                numbers = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", line)
+                if numbers:
+                    return numbers[0].replace(",", "")
+            return line[:220] or text[:220]
+    return evidences[0]
+
+
+def best_line_for_question(question: str, text: str) -> str:
+    import re
+
+    q_tokens = {token.casefold() for token in re.findall(r"\w+", question) if len(token) >= 3}
+    best = ""
+    best_score = -1
+    for line in re.split(r"[\n.;]", text):
+        line = normalize_text(line)
+        if not line:
+            continue
+        tokens = {token.casefold() for token in re.findall(r"\w+", line)}
+        score = len(q_tokens & tokens)
+        if score > best_score:
+            best = line
+            best_score = score
+    return best or normalize_text(text)
 
 
 def summarize_state(state: AgentState) -> dict:

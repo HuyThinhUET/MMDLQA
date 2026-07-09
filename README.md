@@ -164,7 +164,8 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_AGENTIC_TOOLS=1`: bật ToolAgent cho vision/deterministic tools.
 - `MMDLQA_USE_AGENTIC_CODER=1`: bật CoderAgent cho table/SQL/calculation tasks.
 - `MMDLQA_USE_EVIDENCE_SCANNER=1`: bật LLM evidence scanner để đánh giá file direct/partial/irrelevant trước khi reason.
-- `MMDLQA_EVIDENCE_SCAN_MAX_FILES=24`, `MMDLQA_EVIDENCE_SCAN_IRRELEVANT_PATIENCE=6`: scan sâu theo file và dừng khi gặp 6 file không liên quan liên tiếp.
+- `MMDLQA_FORCE_BEST_EFFORT_ANSWER=1`: chỉ trả `Not enough data to answer.` khi không có evidence file hợp lệ; nếu có evidence thì ép best-effort answer.
+- `MMDLQA_EVIDENCE_SCAN_MAX_FILES=24`, `MMDLQA_EVIDENCE_SCAN_IRRELEVANT_PATIENCE=5`: scan sâu theo file và dừng khi gặp 5 file không liên quan liên tiếp.
 - `MMDLQA_RERANK_CANDIDATE_K=36`, `MMDLQA_RERANK_TOP_K=12`: cho reranker nhìn nhiều candidate hơn sau scanner.
 - `MMDLQA_USE_CODER_PLANNER=0`: bật LLM coder planner khi set `1`; mặc định tắt để không tăng cost.
 - `MMDLQA_USE_MODEL_ROUTER=1`: bật chọn model theo vai trò thay vì một model chung.

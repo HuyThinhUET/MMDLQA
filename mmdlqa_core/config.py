@@ -55,6 +55,7 @@ class Settings:
     use_agentic_tools: bool = True
     use_agentic_coder: bool = True
     use_evidence_scanner: bool = True
+    force_best_effort_answer: bool = True
     use_coder_planner: bool = False
     planner_model: str = DEFAULT_ROLE_MODELS["planner"]
     rerank_model: str = DEFAULT_ROLE_MODELS["rerank"]
@@ -137,6 +138,7 @@ class Settings:
             use_agentic_tools=_bool_env("MMDLQA_USE_AGENTIC_TOOLS", True),
             use_agentic_coder=_bool_env("MMDLQA_USE_AGENTIC_CODER", True),
             use_evidence_scanner=_bool_env("MMDLQA_USE_EVIDENCE_SCANNER", True),
+            force_best_effort_answer=_bool_env("MMDLQA_FORCE_BEST_EFFORT_ANSWER", True),
             use_coder_planner=_bool_env("MMDLQA_USE_CODER_PLANNER", False),
             planner_model=os.getenv("MMDLQA_PLANNER_MODEL", DEFAULT_ROLE_MODELS["planner"]),
             rerank_model=os.getenv("MMDLQA_RERANK_MODEL", DEFAULT_ROLE_MODELS["rerank"]),

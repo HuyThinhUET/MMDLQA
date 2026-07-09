@@ -90,7 +90,8 @@ class Answerer:
             "You answer questions using only the provided data-lake context. "
             "Return JSON with keys answer, evidences, and claims. Evidences must be a JSON array of file paths from the context. "
             "Claims must be a JSON array of atomic claims with evidence_files and optional quotes. "
-            "If the context is insufficient, answer exactly: Not enough data to answer. "
+            "If at least one context file is plausibly relevant, give the best supported answer even when evidence is partial. "
+            "Use Not enough data to answer only when no context file is relevant at all. "
             "For exact_match questions, keep answer minimal: number, label, option letter, date, or short phrase only. "
             "Do not invent external facts.",
             question,
@@ -123,7 +124,11 @@ class Answerer:
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(user)},
             ],
-            validator=validate_answer_output(valid_files, require_claims=True),
+            validator=validate_answer_output(
+                valid_files,
+                require_claims=True,
+                allow_insufficient=not self.settings.force_best_effort_answer or not valid_files,
+            ),
             schema_name="baseline_answer",
             schema_hint=schema_hint,
             model=self.models.model_for("synthesis"),
@@ -235,6 +240,9 @@ class Answerer:
     def fallback_answer(self, question: Question, retrieved: list[RetrievedChunk]) -> AnswerResult:
         evidences = top_evidence_files(retrieved, self.settings.max_files_for_question)
         answer = "Not enough data to answer."
+        if self.settings.force_best_effort_answer and evidences:
+            exact = question.answer_type.casefold() == "exact_match"
+            answer = normalize_answer(best_effort_answer_from_retrieved(question, retrieved), exact, question)
         return AnswerResult(
             qid=question.qid,
             answer=answer,
@@ -279,7 +287,11 @@ class Answerer:
                     {"role": "system", "content": system},
                     {"role": "user", "content": content},
                 ],
-                validator=validate_answer_output(set(file_paths), require_claims=False),
+                validator=validate_answer_output(
+                    set(file_paths),
+                    require_claims=False,
+                    allow_insufficient=not self.settings.force_best_effort_answer or not file_paths,
+                ),
                 schema_name="vision_answer",
                 schema_hint={
                     "answer": "string",
@@ -336,3 +348,34 @@ def parse_evidence_literal(value: str) -> list[str]:
     except Exception:
         pass
     return []
+
+
+def best_effort_answer_from_retrieved(question: Question, retrieved: list[RetrievedChunk]) -> str:
+    text = "\n".join(result.chunk.text[:1000] for result in retrieved[:8])
+    if not text:
+        return "Not enough data to answer."
+    if question.answer_type.casefold() == "exact_match" or any(
+        hint in question.question.casefold()
+        for hint in ["how many", "number", "count", "average", "sum", "correlation", "bao nhiêu", "số"]
+    ):
+        snippet = best_matching_line(question.question, text)
+        numbers = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", snippet or text)
+        if numbers:
+            return numbers[0].replace(",", "")
+    return best_matching_line(question.question, text)[:220] or normalize_text(text)[:220]
+
+
+def best_matching_line(question: str, text: str) -> str:
+    q_tokens = {token.casefold() for token in re.findall(r"\w+", question) if len(token) >= 3}
+    best_score = -1
+    best = ""
+    for line in re.split(r"[\n.;]", text):
+        line = normalize_text(line)
+        if not line:
+            continue
+        tokens = {token.casefold() for token in re.findall(r"\w+", line)}
+        score = len(q_tokens & tokens)
+        if score > best_score:
+            best_score = score
+            best = line
+    return best
