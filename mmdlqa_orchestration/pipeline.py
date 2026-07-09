@@ -7,6 +7,7 @@ from pathlib import Path
 from mmdlqa_agents.answering import Answerer
 from mmdlqa_agents.workflow import AgenticAnswerer
 from mmdlqa_core.config import Settings
+from mmdlqa_core.metrics import QuestionRunTracker, aggregate_question_metrics
 from mmdlqa_core.questions import load_questions
 from mmdlqa_core.utils import write_jsonl, write_submission_csv
 from mmdlqa_preprocess.index_store import build_index, load_index
@@ -27,8 +28,12 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
     diagnostics = []
 
     for question in questions:
-        retrieved = retriever.search(question, settings.raw_dir)
-        result = answerer.answer(question, retrieved)
+        with QuestionRunTracker(settings, question.qid) as tracker:
+            with tracker.stage("retrieval"):
+                retrieved = retriever.search(question, settings.raw_dir)
+            with tracker.stage("answering"):
+                result = answerer.answer(question, retrieved)
+            result.diagnostics["metrics"] = tracker.snapshot()
         output_rows.append({"id": result.qid, "answer": result.answer, "evidences": result.evidences})
         diagnostics.append(
             {
@@ -50,10 +55,12 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
     write_submission_csv(settings.submission_path, output_rows)
     write_jsonl(settings.output_dir / "diagnostics.jsonl", diagnostics)
     summary = {
+        "mode": "baseline",
         "questions": len(questions),
         "indexed_files": len(records),
         "indexed_chunks": len(chunks),
         "submission": str(settings.submission_path),
+        "metrics": aggregate_question_metrics(diagnostics),
     }
     (settings.output_dir / "run_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -90,7 +97,9 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
     diagnostics = []
 
     for question in questions:
-        result = answerer.answer(question)
+        with QuestionRunTracker(settings, question.qid) as tracker:
+            result = answerer.answer(question)
+            result.diagnostics["metrics"] = tracker.snapshot()
         output_rows.append({"id": result.qid, "answer": result.answer, "evidences": result.evidences})
         diagnostics.append(
             {
@@ -108,6 +117,7 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
         "indexed_files": len(records),
         "indexed_chunks": len(chunks),
         "submission": str(settings.submission_path),
+        "metrics": aggregate_question_metrics(diagnostics),
     }
     (settings.output_dir / "run_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"

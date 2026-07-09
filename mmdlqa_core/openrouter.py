@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import time
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from .config import Settings
+from .metrics import current_tracker
 
 
 class OpenRouterClient:
@@ -30,9 +32,13 @@ class OpenRouterClient:
     ) -> str:
         if not self.available:
             raise RuntimeError("OPENROUTER_API_KEY is not set or MMDLQA_USE_LLM=0.")
+        tracker = current_tracker()
+        if tracker:
+            tracker.check_limits("before_llm_call")
         url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
+        selected_model = model or self.settings.openrouter_model
         payload: dict[str, Any] = {
-            "model": model or self.settings.openrouter_model,
+            "model": selected_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -45,16 +51,41 @@ class OpenRouterClient:
             "HTTP-Referer": self.settings.openrouter_referer,
             "X-Title": self.settings.openrouter_app_name,
         }
-        resp = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=self.settings.request_timeout_sec,
-        )
-        if resp.status_code >= 400:
-            raise RuntimeError(f"OpenRouter error {resp.status_code}: {resp.text[:1000]}")
-        data = resp.json()
-        return data["choices"][0]["message"].get("content", "")
+        start = time.perf_counter()
+        usage: dict[str, Any] = {}
+        try:
+            resp = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=self.settings.request_timeout_sec,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"OpenRouter error {resp.status_code}: {resp.text[:1000]}")
+            data = resp.json()
+            usage = data.get("usage") or {}
+            if not isinstance(usage, dict):
+                usage = {}
+            content = data["choices"][0]["message"].get("content", "")
+        except Exception as exc:
+            if tracker:
+                tracker.record_llm_call(
+                    model=selected_model,
+                    elapsed_sec=time.perf_counter() - start,
+                    ok=False,
+                    usage=usage,
+                    error=repr(exc),
+                )
+            raise
+        if tracker:
+            tracker.record_llm_call(
+                model=selected_model,
+                elapsed_sec=time.perf_counter() - start,
+                ok=True,
+                usage=usage,
+            )
+            tracker.check_limits("after_llm_call")
+        return content
 
     def json_chat(
         self,

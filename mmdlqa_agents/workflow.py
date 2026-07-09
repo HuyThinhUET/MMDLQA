@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from mmdlqa_core.config import Settings
 from mmdlqa_core.contracts import AgentState, AnswerCandidate, RagQuery
+from mmdlqa_core.metrics import BudgetExceededError, current_tracker
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order
 from mmdlqa_retrieval.hybrid import top_evidence_files
@@ -35,21 +36,52 @@ class AgenticAnswerer:
 
     def answer(self, question: Question) -> AnswerResult:
         state = AgentState(question=question)
-        state.steps = self.planner.plan(question)
-        self.retrieve_planned_steps(state)
+        tracker = current_tracker()
+        try:
+            if tracker:
+                with tracker.stage("agentic_planning"):
+                    state.steps = self.planner.plan(question)
+                with tracker.stage("agentic_planned_retrieval"):
+                    self.retrieve_planned_steps(state)
+            else:
+                state.steps = self.planner.plan(question)
+                self.retrieve_planned_steps(state)
+        except BudgetExceededError as exc:
+            state.diagnostics["limit_stop"] = str(exc)
 
         selected = AnswerCandidate(source="empty", answer="Not enough data to answer.")
         rounds = max(1, self.settings.agentic_max_rounds)
         for round_idx in range(rounds):
-            new_candidates = self.moe.run(state)
-            state.candidates.extend(new_candidates)
-            selected = self.aggregator.choose(state)
-            report = self.critic.review(state, selected)
+            try:
+                if tracker:
+                    tracker.check_limits(f"before_reasoning_round_{round_idx}")
+                    with tracker.stage("agentic_reasoning", {"round": round_idx}):
+                        new_candidates = self.moe.run(state)
+                    state.candidates.extend(new_candidates)
+                    selected = self.aggregator.choose(state)
+                    with tracker.stage("agentic_critic", {"round": round_idx}):
+                        report = self.critic.review(state, selected)
+                else:
+                    new_candidates = self.moe.run(state)
+                    state.candidates.extend(new_candidates)
+                    selected = self.aggregator.choose(state)
+                    report = self.critic.review(state, selected)
+            except BudgetExceededError as exc:
+                state.diagnostics["limit_stop"] = str(exc)
+                break
             state.critic_reports.append(report)
             if report.ok or round_idx >= rounds - 1 or not report.missing_queries:
                 break
             state.diagnostics["retried_missing_evidence"] = True
-            self.retrieve_missing_queries(state, report.missing_queries, round_idx)
+            try:
+                if tracker:
+                    with tracker.stage("agentic_critic_followup_retrieval", {"round": round_idx}):
+                        self.retrieve_missing_queries(state, report.missing_queries, round_idx)
+                else:
+                    self.retrieve_missing_queries(state, report.missing_queries, round_idx)
+            except BudgetExceededError as exc:
+                state.diagnostics["limit_stop"] = str(exc)
+                break
 
         result = result_from_candidate(question, selected, state, self.settings)
         state.final_answer = result
@@ -81,6 +113,17 @@ class AgenticAnswerer:
             self.retrieve_query(state, query)
 
     def retrieve_query(self, state: AgentState, query: RagQuery) -> None:
+        tracker = current_tracker()
+        if tracker:
+            tracker.check_limits("before_rag_query")
+        if (
+            self.settings.max_question_rag_queries > 0
+            and len(state.rag_queries) >= self.settings.max_question_rag_queries
+        ):
+            state.diagnostics["rag_query_limit_reached"] = True
+            if tracker:
+                tracker.note_limit("rag_query_limit_reached")
+            return
         if query.top_k is None and should_expand_retrieval(query):
             query.top_k = max(self.settings.retrieve_top_k, self.settings.max_files_for_question * 3, 30)
         state.rag_queries.append(query)

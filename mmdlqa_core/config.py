@@ -12,6 +12,16 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _float_env(name: str, default: float = 0.0) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 @dataclass(slots=True)
 class Settings:
     input_dir: Path = Path("input")
@@ -49,6 +59,12 @@ class Settings:
     agentic_max_steps: int = 5
     agentic_max_rounds: int = 2
     agentic_moe_models: str = ""
+    max_question_seconds: float = 0.0
+    max_question_llm_calls: int = 0
+    max_question_cost_usd: float = 0.0
+    max_question_rag_queries: int = 0
+    llm_input_cost_per_million_tokens: float = 0.0
+    llm_output_cost_per_million_tokens: float = 0.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -94,6 +110,12 @@ class Settings:
             agentic_max_steps=int(os.getenv("MMDLQA_AGENTIC_MAX_STEPS", "5")),
             agentic_max_rounds=int(os.getenv("MMDLQA_AGENTIC_MAX_ROUNDS", "2")),
             agentic_moe_models=os.getenv("MMDLQA_AGENTIC_MOE_MODELS", ""),
+            max_question_seconds=_float_env("MMDLQA_MAX_QUESTION_SECONDS", 0.0),
+            max_question_llm_calls=int(os.getenv("MMDLQA_MAX_QUESTION_LLM_CALLS", "0")),
+            max_question_cost_usd=_float_env("MMDLQA_MAX_QUESTION_COST_USD", 0.0),
+            max_question_rag_queries=int(os.getenv("MMDLQA_MAX_QUESTION_RAG_QUERIES", "0")),
+            llm_input_cost_per_million_tokens=_float_env("MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS", 0.0),
+            llm_output_cost_per_million_tokens=_float_env("MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS", 0.0),
         )
 
     def ensure_dirs(self) -> None:

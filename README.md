@@ -141,7 +141,14 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.
 - `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=2`: giới hạn planning/retry.
 - `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, dùng model riêng cho các expert.
+- `MMDLQA_MAX_QUESTION_SECONDS=0`: giới hạn thời gian mỗi câu; `0` là không giới hạn.
+- `MMDLQA_MAX_QUESTION_LLM_CALLS=0`: giới hạn số LLM calls mỗi câu; `0` là không giới hạn.
+- `MMDLQA_MAX_QUESTION_COST_USD=0`: giới hạn cost estimate mỗi câu; `0` là không giới hạn.
+- `MMDLQA_MAX_QUESTION_RAG_QUERIES=0`: giới hạn số RAG query mỗi câu; `0` là không giới hạn.
+- `MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS=0`, `MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS=0`: giá tự cấu hình để estimate cost nếu provider không trả cost.
 - `MMDLQA_RETRIEVE_TOP_K=8`, `MMDLQA_RERANK_TOP_K=5`, `MMDLQA_MAX_CONTEXT_CHARS=16000`: giảm token.
+
+Mỗi câu hỏi ghi metrics vào `diagnostics.jsonl` trong `answer.diagnostics.metrics`: elapsed time, stage timings, LLM calls, token usage, estimated cost, và trạng thái limit. `run_summary.json` có phần tổng hợp `metrics` cho toàn run.
 
 ## Notes
 
