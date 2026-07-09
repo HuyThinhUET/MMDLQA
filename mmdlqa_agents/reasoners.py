@@ -8,6 +8,7 @@ from mmdlqa_core.contracts import AgentState, AnswerCandidate, ToolCallRecord
 from mmdlqa_core.metrics import BudgetExceededError
 from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
+from mmdlqa_core.prompting import answer_contract_payload, secure_system_prompt, untrusted_data_notice
 from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
 from mmdlqa_retrieval.hybrid import top_evidence_files
@@ -106,6 +107,8 @@ class PromptedReasoner:
             ],
             "context": context,
             "exact_match_style": exact,
+            "answer_contract": answer_contract_payload(state.question),
+            "prompt_security": untrusted_data_notice(),
             "instructions": {
                 "evidences_must_be_files_from_context": True,
                 "insufficient_answer": "Not enough data to answer.",
@@ -113,13 +116,20 @@ class PromptedReasoner:
         }
         data = self.llm.json_chat(
             [
-                {"role": "system", "content": self.system_prompt},
+                {
+                    "role": "system",
+                    "content": secure_system_prompt(
+                        self.system_prompt,
+                        state.question,
+                        include_answer_contract=True,
+                    ),
+                },
                 {"role": "user", "content": json_dumps(payload)},
             ],
             model=self.model,
             max_tokens=1200,
         )
-        answer = normalize_answer(str(data.get("answer", "")), exact)
+        answer = normalize_answer(str(data.get("answer", "")), exact, state.question)
         evidences = data.get("evidences", [])
         if not isinstance(evidences, list):
             evidences = []

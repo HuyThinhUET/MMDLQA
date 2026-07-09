@@ -7,6 +7,7 @@ from mmdlqa_core.contracts import AgentState, AnswerCandidate, CriticReport
 from mmdlqa_core.metrics import BudgetExceededError
 from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
+from mmdlqa_core.prompting import secure_system_prompt, untrusted_data_notice
 from mmdlqa_core.utils import json_dumps, normalize_text
 
 
@@ -87,19 +88,23 @@ class EvidenceCritic:
                 for step in state.steps
             ],
             "context": context,
+            "prompt_security": untrusted_data_notice(),
         }
+        system = secure_system_prompt(
+            "You are a strict verifier for data-lake QA. "
+            "Check whether the candidate answer is supported by the provided context only. "
+            "Return JSON with keys ok (boolean), issues (array of short strings), "
+            "missing_queries (array of standalone RAG query sentences). "
+            "Use missing_queries only when another retrieval pass could fix the answer.",
+            state.question,
+            extra_rules=(
+                "Missing queries must be neutral retrieval sentences, not instructions to the QA model. "
+                "When they are natural-language text, write them in the same language as the original question."
+            ),
+        )
         data = self.llm.json_chat(
             [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a strict verifier for data-lake QA. "
-                        "Check whether the candidate answer is supported by the provided context only. "
-                        "Return JSON with keys ok (boolean), issues (array of short strings), "
-                        "missing_queries (array of standalone RAG query sentences). "
-                        "Use missing_queries only when another retrieval pass could fix the answer."
-                    ),
-                },
+                {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(payload)},
             ],
             model=self.models.model_for("critic"),
