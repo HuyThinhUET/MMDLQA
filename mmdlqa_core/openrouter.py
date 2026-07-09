@@ -19,7 +19,7 @@ class OpenRouterClient:
 
     @property
     def available(self) -> bool:
-        return bool(self.settings.openrouter_api_key and self.settings.use_llm)
+        return bool(sanitize_api_key(self.settings.openrouter_api_key) and self.settings.use_llm)
 
     def chat(
         self,
@@ -32,6 +32,7 @@ class OpenRouterClient:
     ) -> str:
         if not self.available:
             raise RuntimeError("OPENROUTER_API_KEY is not set or MMDLQA_USE_LLM=0.")
+        api_key = sanitize_api_key(self.settings.openrouter_api_key)
         tracker = current_tracker()
         if tracker:
             tracker.check_limits("before_llm_call")
@@ -46,7 +47,7 @@ class OpenRouterClient:
         if response_format:
             payload["response_format"] = response_format
         headers = {
-            "Authorization": f"Bearer {self.settings.openrouter_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": self.settings.openrouter_referer,
             "X-Title": self.settings.openrouter_app_name,
@@ -168,3 +169,11 @@ def int_token_value(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def sanitize_api_key(value: str) -> str:
+    key = (value or "").strip().strip('"').strip("'")
+    if key.casefold().startswith("bearer "):
+        key = key[7:].strip()
+    key = key.replace("\\r", "").replace("\\n", "").replace("\\t", "")
+    return "".join(key.split())

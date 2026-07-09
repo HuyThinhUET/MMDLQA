@@ -8,6 +8,7 @@ from mmdlqa_agents.answering import Answerer
 from mmdlqa_agents.workflow import AgenticAnswerer
 from mmdlqa_core.config import Settings
 from mmdlqa_core.metrics import QuestionRunTracker, aggregate_question_metrics
+from mmdlqa_core.openrouter import sanitize_api_key
 from mmdlqa_core.questions import load_questions
 from mmdlqa_core.utils import write_jsonl, write_submission_csv
 from mmdlqa_preprocess.index_store import build_index, index_metadata, load_index
@@ -152,7 +153,7 @@ def print_question_progress(settings: Settings, result) -> None:
 def print_run_preflight(settings: Settings) -> None:
     if not settings.print_question_metrics:
         return
-    key_present = bool(settings.openrouter_api_key)
+    key_present = bool(sanitize_api_key(settings.openrouter_api_key))
     llm_available = key_present and settings.use_llm
     print(
         "[run] "
