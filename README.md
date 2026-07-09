@@ -23,6 +23,9 @@ Drive chỉ cần chứa:
 MMDLQA_data/
   input/
     sample_questions.xlsx
+    text_cleaning_output/
+      by_file/
+      text_cleaning_manifest.csv
     raw/
       ...
   output/
@@ -44,8 +47,14 @@ Mount Drive hoặc upload data lake vào:
 
 ```text
 input/raw/
+input/text_cleaning_output/
 input/sample_questions.xlsx
 ```
+
+`input/text_cleaning_output` is now treated as the preferred preprocessed knowledge source.
+The index loader reads `by_file/*/clean.txt` plus `metadata.json` first, then extracts raw files
+from `input/raw` only when they are not already covered by the cleaned manifest. With the current
+local data this gives 60 preprocessed files and 26 raw fallback files, mostly CSV/XLSX tables.
 
 Set OpenRouter key:
 
@@ -67,19 +76,19 @@ và đổi `OPENROUTER_MODEL`.
 Dry run không gọi LLM, hữu ích để kiểm tra ingest/retrieve:
 
 ```bash
-MMDLQA_USE_LLM=0 python script/run_pipeline.py --rebuild-index --limit 5
+MMDLQA_USE_LLM=0 python script/run_pipeline.py --rebuild-index --limit 5 --text-cleaning-output input/text_cleaning_output
 ```
 
 Chạy đầy đủ:
 
 ```bash
-python script/run_pipeline.py --rebuild-index
+python script/run_pipeline.py --rebuild-index --text-cleaning-output input/text_cleaning_output
 ```
 
 Chạy workflow agentic shell mới, hiện vẫn dùng reasoner baseline ở phía sau nhưng RAG boundary đã là một `sentence`:
 
 ```bash
-MMDLQA_USE_LLM=0 python script/run_agentic.py --limit 5
+MMDLQA_USE_LLM=0 python script/run_agentic.py --rebuild-index --limit 5 --text-cleaning-output input/text_cleaning_output
 ```
 
 Đánh giá nhanh các câu `exact_match` trong sample có groundtruth:
@@ -105,27 +114,28 @@ output/cache/chunks.jsonl
 
 ## Pipeline
 
-1. Walk `input/raw` và phân loại file: table, text, document, image, audio, video.
-2. Extract nội dung:
+1. Load `input/text_cleaning_output/by_file/*/clean.txt` plus metadata as the preferred offline preprocess output.
+2. Walk `input/raw` and extract only files not covered by the cleaned output, usually tables/audio/legacy docs.
+3. Extract nội dung:
    - CSV/XLSX: cột, sheet, preview rows.
    - TXT/MD/HTML/SQL/code: text sạch.
    - PDF/DOCX/PPTX: text theo page/slide khi thư viện hỗ trợ.
    - Image: kích thước, OCR bằng Tesseract, color stats, optional vision caption bằng OpenRouter khi bật `MMDLQA_USE_LLM_SUMMARIES=1`.
    - Audio: duration + transcript bằng Whisper nếu bật.
    - Video: audio transcript + sample frames + OCR/caption.
-3. Chunk và cache vào JSONL.
-4. Retrieve bằng BM25 nhẹ + path/folder mention + modality hints.
-5. Optional LLM rerank top chunks.
-6. Answer JSON bằng OpenRouter, ép evidence chỉ lấy từ file đã retrieve.
-7. Normalize exact-match answer và xuất CSV.
+4. Chunk và cache vào JSONL.
+5. Retrieve bằng BM25 nhẹ + path/folder mention + fuzzy source match + modality hints + optional semantic search.
+6. Optional LLM rerank top chunks.
+7. Answer JSON bằng OpenRouter, ép evidence chỉ lấy từ file đã retrieve.
+8. Normalize exact-match answer và xuất CSV.
 
 ## Agentic Refactor
 
 Code đã được tách theo ranh giới phát triển thay vì gom trong một package baseline:
 
 - `mmdlqa_core/`: schema, config, question loader, OpenRouter client, utility và contract chung như `RagQuery`, `ReasoningStep`, `AgentState`.
-- `mmdlqa_preprocess/`: xử lý offline data lake, extract file, chunk, và ghi knowledge library/cache.
-- `mmdlqa_retrieval/`: search/RAG; `SentenceRAG` nhận một câu truy vấn tự nhiên rồi trả về chunks liên quan.
+- `mmdlqa_preprocess/`: xử lý offline data lake, load cleaned preprocess output, extract raw fallback, chunk, và ghi knowledge library/cache.
+- `mmdlqa_retrieval/`: search/RAG; `SentenceRAG` nhận một câu truy vấn tự nhiên rồi trả về chunks liên quan, có BM25/path/fuzzy/source/optional semantic scoring.
 - `mmdlqa_agents/`: multi-agent workflow `Planner -> RAG -> Tool/Coder -> MoE Reasoners -> Aggregator -> Critic`.
   - `planner.py`: tách câu hỏi thành các `ReasoningStep`; mỗi step là một sentence có thể đưa thẳng vào RAG.
   - `tool_agents.py`: tách `CoderAgent` cho table/SQL/calculation plan + safe executor và `ToolAgent` cho vision/deterministic tools.
@@ -140,6 +150,9 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 ## Cost Controls
 
 - `MMDLQA_USE_LLM=0`: không gọi OpenRouter.
+- `MMDLQA_TEXT_CLEANING_OUTPUT_DIR=input/text_cleaning_output`: folder output preprocess offline.
+- `MMDLQA_USE_TEXT_CLEANING_OUTPUT=1`: index cleaned output first.
+- `MMDLQA_INCLUDE_RAW_FALLBACK=1`: also extract raw files not covered by cleaned output.
 - `MMDLQA_USE_LLM_RERANK=0`: bỏ bước rerank.
 - `MMDLQA_USE_VISION_LLM=0`: không gọi vision LLM cho câu hỏi ảnh.
 - `MMDLQA_USE_LLM_SUMMARIES=1`: caption mọi ảnh lúc build index, tốn quota hơn nhưng retrieve tốt hơn.

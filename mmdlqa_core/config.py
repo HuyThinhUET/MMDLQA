@@ -28,6 +28,7 @@ def _float_env(name: str, default: float = 0.0) -> float:
 class Settings:
     input_dir: Path = Path("input")
     raw_dir: Path = Path("input/raw")
+    text_cleaning_output_dir: Path = Path("input/text_cleaning_output")
     questions_path: Path = Path("input/sample_questions.xlsx")
     output_dir: Path = Path("output")
     cache_dir: Path = Path("output/cache")
@@ -40,6 +41,8 @@ class Settings:
     openrouter_app_name: str = "MMDLQA Agentic QA"
 
     use_llm: bool = True
+    use_text_cleaning_output: bool = True
+    include_raw_fallback: bool = True
     use_model_router: bool = True
     use_llm_summaries: bool = False
     use_llm_rerank: bool = True
@@ -91,6 +94,9 @@ class Settings:
         return cls(
             input_dir=Path(os.getenv("MMDLQA_INPUT_DIR", "input")),
             raw_dir=Path(os.getenv("MMDLQA_RAW_DIR", "input/raw")),
+            text_cleaning_output_dir=Path(
+                os.getenv("MMDLQA_TEXT_CLEANING_OUTPUT_DIR", "input/text_cleaning_output")
+            ),
             questions_path=Path(os.getenv("MMDLQA_QUESTIONS", "input/sample_questions.xlsx")),
             output_dir=Path(os.getenv("MMDLQA_OUTPUT_DIR", "output")),
             cache_dir=Path(os.getenv("MMDLQA_CACHE_DIR", "output/cache")),
@@ -103,6 +109,8 @@ class Settings:
             ),
             openrouter_app_name=os.getenv("OPENROUTER_APP_NAME", "MMDLQA Agentic QA"),
             use_llm=_bool_env("MMDLQA_USE_LLM", True),
+            use_text_cleaning_output=_bool_env("MMDLQA_USE_TEXT_CLEANING_OUTPUT", True),
+            include_raw_fallback=_bool_env("MMDLQA_INCLUDE_RAW_FALLBACK", True),
             use_model_router=_bool_env("MMDLQA_USE_MODEL_ROUTER", True),
             use_llm_summaries=_bool_env("MMDLQA_USE_LLM_SUMMARIES", False),
             use_llm_rerank=_bool_env("MMDLQA_USE_LLM_RERANK", True),

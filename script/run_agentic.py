@@ -16,6 +16,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run agentic QA workflow and write submission.csv.")
     parser.add_argument("--questions", default=None, help="Questions .xlsx/.csv path.")
     parser.add_argument("--raw-dir", default=None, help="Path to raw data lake directory.")
+    parser.add_argument("--text-cleaning-output", default=None, help="Path to preprocessed text_cleaning_output.")
+    parser.add_argument("--no-text-cleaning-output", action="store_true", help="Index raw files only.")
+    parser.add_argument("--no-raw-fallback", action="store_true", help="Index cleaned output only.")
     parser.add_argument("--output-dir", default=None, help="Output directory.")
     parser.add_argument("--submission", default=None, help="Submission CSV path.")
     parser.add_argument("--rebuild-index", action="store_true", help="Rebuild index before answering.")
@@ -27,6 +30,13 @@ def main() -> None:
         settings.questions_path = Path(args.questions)
     if args.raw_dir:
         settings.raw_dir = Path(args.raw_dir)
+    if args.text_cleaning_output:
+        settings.text_cleaning_output_dir = Path(args.text_cleaning_output)
+        settings.use_text_cleaning_output = True
+    if args.no_text_cleaning_output:
+        settings.use_text_cleaning_output = False
+    if args.no_raw_fallback:
+        settings.include_raw_fallback = False
     if args.output_dir:
         settings.output_dir = Path(args.output_dir)
         settings.cache_dir = settings.output_dir / "cache"

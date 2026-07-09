@@ -10,7 +10,7 @@ from mmdlqa_core.config import Settings
 from mmdlqa_core.metrics import QuestionRunTracker, aggregate_question_metrics
 from mmdlqa_core.questions import load_questions
 from mmdlqa_core.utils import write_jsonl, write_submission_csv
-from mmdlqa_preprocess.index_store import build_index, load_index
+from mmdlqa_preprocess.index_store import build_index, index_metadata, load_index
 from mmdlqa_retrieval.hybrid import HybridRetriever
 from mmdlqa_retrieval.rag import SentenceRAG
 
@@ -59,6 +59,7 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
         "questions": len(questions),
         "indexed_files": len(records),
         "indexed_chunks": len(chunks),
+        "index": index_metadata(settings, records, chunks),
         "submission": str(settings.submission_path),
         "metrics": aggregate_question_metrics(diagnostics),
     }
@@ -73,6 +74,7 @@ def build_only(settings: Settings, *, force: bool = False) -> None:
     summary = {
         "indexed_files": len(records),
         "indexed_chunks": len(chunks),
+        "index": index_metadata(settings, records, chunks),
         "cache_dir": str(settings.cache_dir),
     }
     (settings.output_dir / "index_summary.json").write_text(
@@ -116,6 +118,7 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
         "questions": len(questions),
         "indexed_files": len(records),
         "indexed_chunks": len(chunks),
+        "index": index_metadata(settings, records, chunks),
         "submission": str(settings.submission_path),
         "metrics": aggregate_question_metrics(diagnostics),
     }

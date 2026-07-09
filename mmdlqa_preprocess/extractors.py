@@ -43,6 +43,7 @@ DOC_SUFFIXES = {".pdf", ".docx", ".pptx", ".ppt"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"}
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+LARGE_XLSX_XML_THRESHOLD_BYTES = 8_000_000
 
 
 def modality_for(path: Path) -> str:
@@ -204,6 +205,8 @@ def extract_csv(path: Path, delimiter: str = ",") -> tuple[str, dict[str, Any]]:
 
 
 def extract_xlsx(path: Path) -> tuple[str, dict[str, Any]]:
+    if path.stat().st_size >= LARGE_XLSX_XML_THRESHOLD_BYTES:
+        return extract_xlsx_xml(path)
     try:
         import openpyxl
 
@@ -241,18 +244,80 @@ def extract_xlsx_xml(path: Path) -> tuple[str, dict[str, Any]]:
             n = n * 26 + ord(ch.upper()) - 64
         return max(0, n - 1)
 
+    def read_sheet_rows(
+        z: zipfile.ZipFile,
+        target: str,
+        *,
+        max_rows: int = 40,
+        max_cols: int = 40,
+    ) -> tuple[list[list[tuple[str, str]]], set[int]]:
+        import xml.etree.ElementTree as ET
+
+        rows: list[list[tuple[str, str]]] = []
+        shared_indices: set[int] = set()
+        with z.open(target) as f:
+            for _, elem in ET.iterparse(f, events=("end",)):
+                if not elem.tag.endswith("}row"):
+                    continue
+                cells: dict[int, tuple[str, str]] = {}
+                for cell in elem.findall("main:c", ns):
+                    ref = cell.attrib.get("r", "")
+                    col_idx = col_to_idx(ref)
+                    if col_idx >= max_cols:
+                        continue
+                    typ = cell.attrib.get("t")
+                    value_type = "value"
+                    value = ""
+                    v = cell.find("main:v", ns)
+                    if v is not None and v.text is not None:
+                        if typ == "s":
+                            value_type = "shared"
+                            value = v.text
+                            try:
+                                shared_indices.add(int(v.text))
+                            except ValueError:
+                                pass
+                        else:
+                            value = v.text
+                    elif typ == "inlineStr":
+                        value = "".join(t.text or "" for t in cell.findall(".//main:t", ns))
+                    cells[col_idx] = (value_type, value)
+                if cells:
+                    max_col = min(max_cols - 1, max(cells))
+                    rows.append([cells.get(i, ("value", "")) for i in range(max_col + 1)])
+                    if len(rows) >= max_rows:
+                        break
+                elem.clear()
+        return rows, shared_indices
+
+    def load_shared_strings_subset(z: zipfile.ZipFile, needed: set[int]) -> dict[int, str]:
+        if not needed or "xl/sharedStrings.xml" not in z.namelist():
+            return {}
+        import xml.etree.ElementTree as ET
+
+        found: dict[int, str] = {}
+        current = -1
+        with z.open("xl/sharedStrings.xml") as f:
+            for _, elem in ET.iterparse(f, events=("end",)):
+                if not elem.tag.endswith("}si"):
+                    continue
+                current += 1
+                if current in needed:
+                    found[current] = "".join(elem.itertext())
+                    if len(found) == len(needed):
+                        break
+                elem.clear()
+        return found
+
     with zipfile.ZipFile(path) as z:
-        shared: list[str] = []
-        if "xl/sharedStrings.xml" in z.namelist():
-            root = _xml_from_zip(z, "xl/sharedStrings.xml")
-            for si in root.findall("main:si", ns):
-                shared.append("".join(t.text or "" for t in si.findall(".//main:t", ns)))
         wb = _xml_from_zip(z, "xl/workbook.xml")
         rels = _xml_from_zip(z, "xl/_rels/workbook.xml.rels")
         relmap = {r.attrib["Id"]: r.attrib["Target"] for r in rels}
         parts = [f"Workbook: {path.name}"]
         sheets: list[str] = []
         columns: list[str] = []
+        sheet_previews: list[tuple[str, list[list[tuple[str, str]]]]] = []
+        needed_shared: set[int] = set()
         for sheet in wb.findall("main:sheets/main:sheet", ns)[:12]:
             name = sheet.attrib["name"]
             sheets.append(name)
@@ -260,33 +325,28 @@ def extract_xlsx_xml(path: Path) -> tuple[str, dict[str, Any]]:
             target = relmap[rid]
             if not target.startswith("xl/"):
                 target = "xl/" + target
-            root = _xml_from_zip(z, target)
+            rows, shared_indices = read_sheet_rows(z, target)
+            sheet_previews.append((name, rows))
+            needed_shared.update(shared_indices)
+
+        shared = load_shared_strings_subset(z, needed_shared)
+        for name, rows in sheet_previews:
             parts.append(f"\nSheet: {name}")
-            row_count = 0
-            for row in root.findall("main:sheetData/main:row", ns):
-                cells: dict[int, str] = {}
-                for c in row.findall("main:c", ns):
-                    ref = c.attrib.get("r", "")
-                    typ = c.attrib.get("t")
-                    value = ""
-                    v = c.find("main:v", ns)
-                    if v is not None and v.text is not None:
-                        value = shared[int(v.text)] if typ == "s" else v.text
-                    elif typ == "inlineStr":
-                        value = "".join(t.text or "" for t in c.findall(".//main:t", ns))
-                    cells[col_to_idx(ref)] = value
-                if cells:
-                    max_col = min(39, max(cells))
-                    values = [cells.get(i, "") for i in range(max_col + 1)]
-                    if row_count == 0:
-                        columns.extend(values)
-                        parts.append("Columns/first row: " + " | ".join(values))
-                    else:
-                        parts.append(" | ".join(values))
-                    row_count += 1
-                    if row_count >= 40:
-                        break
-        return "\n".join(parts), {"sheets": sheets, "columns": [c for c in columns if c]}
+            for row_count, row in enumerate(rows):
+                values = [
+                    shared.get(int(value), "") if value_type == "shared" and value.isdigit() else value
+                    for value_type, value in row
+                ]
+                if row_count == 0:
+                    columns.extend(values)
+                    parts.append("Columns/first row: " + " | ".join(values))
+                else:
+                    parts.append(" | ".join(values))
+        return "\n".join(parts), {
+            "sheets": sheets,
+            "columns": [c for c in columns if c],
+            "xlsx_extract_method": "zip_xml_preview",
+        }
 
 
 def _xml_from_zip(z: zipfile.ZipFile, name: str) -> Any:
