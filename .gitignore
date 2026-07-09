@@ -9,4 +9,8 @@ output/*.jsonl
 output/*.json
 output/submission.csv
 
-input/raw/
+input/
+
+idea.txt
+
+iSE Challenge 2026.docx
