@@ -12,6 +12,12 @@ DEFAULT_ROLE_MODELS = {
     "critic": "deepseek/deepseek-chat-v3.1",
     "coder": "qwen/qwen3-coder-flash",
     "vision": "google/gemini-2.5-flash",
+    "scan_text": "google/gemini-2.5-flash-lite",
+    "scan_table": "qwen/qwen3-coder-flash",
+    "scan_document": "deepseek/deepseek-chat-v3.1",
+    "scan_image": "google/gemini-2.5-flash",
+    "scan_audio": "google/gemini-2.5-flash-lite",
+    "scan_video": "google/gemini-2.5-flash-lite",
 }
 
 

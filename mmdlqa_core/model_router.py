@@ -12,6 +12,12 @@ ROLE_SETTING_FIELDS = {
     "critic": "critic_model",
     "coder": "coder_model",
     "vision": "vision_model",
+    "scan_text": "scan_text_model",
+    "scan_table": "scan_table_model",
+    "scan_document": "scan_document_model",
+    "scan_image": "scan_image_model",
+    "scan_audio": "scan_audio_model",
+    "scan_video": "scan_video_model",
 }
 
 

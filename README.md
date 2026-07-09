@@ -139,8 +139,9 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `mmdlqa_agents/`: multi-agent workflow `Planner -> RAG -> Tool/Coder -> MoE Reasoners -> Aggregator -> Critic`.
   - `planner.py`: tách câu hỏi thành các `ReasoningStep`; mỗi step là một sentence có thể đưa thẳng vào RAG.
   - `tool_agents.py`: tách `CoderAgent` cho table/SQL/calculation plan + safe executor và `ToolAgent` cho vision/deterministic tools.
-  - `reasoners.py`: điều phối Coder/Tool trước, rồi các LLM experts như exact-answer và synthesis khi bật MoE.
-  - `evidence.py`: tạo evidence ledger dạng claim -> file/chunk/quote cho từng candidate.
+- `reasoners.py`: điều phối Coder/Tool trước, rồi các LLM experts như exact-answer và synthesis khi bật MoE.
+- `evidence_scanner.py`: quét sâu các file/chunk đã retrieve, dùng model theo modality để trích xuất direct/partial evidence và dừng khi gặp đủ file không liên quan liên tiếp.
+- `evidence.py`: tạo evidence ledger dạng claim -> file/chunk/quote cho từng candidate.
   - `structured.py`: validate JSON output của planner/rerank/reasoner/critic/coder và repair một lần nếu sai schema.
   - `critic.py`: kiểm tra answer/evidence, có thể yêu cầu retrieve bổ sung bằng `missing_queries`.
   - `workflow.py`: điều phối loop nhiều round và ghi diagnostics chi tiết.
@@ -162,6 +163,9 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.
 - `MMDLQA_USE_AGENTIC_TOOLS=1`: bật ToolAgent cho vision/deterministic tools.
 - `MMDLQA_USE_AGENTIC_CODER=1`: bật CoderAgent cho table/SQL/calculation tasks.
+- `MMDLQA_USE_EVIDENCE_SCANNER=1`: bật LLM evidence scanner để đánh giá file direct/partial/irrelevant trước khi reason.
+- `MMDLQA_EVIDENCE_SCAN_MAX_FILES=24`, `MMDLQA_EVIDENCE_SCAN_IRRELEVANT_PATIENCE=6`: scan sâu theo file và dừng khi gặp 6 file không liên quan liên tiếp.
+- `MMDLQA_RERANK_CANDIDATE_K=36`, `MMDLQA_RERANK_TOP_K=12`: cho reranker nhìn nhiều candidate hơn sau scanner.
 - `MMDLQA_USE_CODER_PLANNER=0`: bật LLM coder planner khi set `1`; mặc định tắt để không tăng cost.
 - `MMDLQA_USE_MODEL_ROUTER=1`: bật chọn model theo vai trò thay vì một model chung.
 - `MMDLQA_PLANNER_MODEL=google/gemini-2.5-flash-lite`: model tách câu hỏi thành steps.
@@ -171,6 +175,7 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_CRITIC_MODEL=deepseek/deepseek-chat-v3.1`: agent phản biện evidence.
 - `MMDLQA_CODER_MODEL=qwen/qwen3-coder-flash`: model dành cho coder/calculation agent khi mở rộng.
 - `MMDLQA_VISION_MODEL=google/gemini-2.5-flash`: model nhìn ảnh/video frame.
+- `MMDLQA_SCAN_TEXT_MODEL=google/gemini-2.5-flash-lite`, `MMDLQA_SCAN_TABLE_MODEL=qwen/qwen3-coder-flash`, `MMDLQA_SCAN_DOCUMENT_MODEL=deepseek/deepseek-chat-v3.1`, `MMDLQA_SCAN_IMAGE_MODEL=google/gemini-2.5-flash`: model trích xuất evidence theo modality.
 - `MMDLQA_AGENTIC_MAX_STEPS=5`, `MMDLQA_AGENTIC_MAX_ROUNDS=4`: giới hạn planning/retry, mặc định loop khoảng 3-5 vòng.
 - `MMDLQA_AGENTIC_MOE_MODELS=model_a,model_b`: optional, override riêng exact/synthesis expert.
 - `MMDLQA_MAX_QUESTION_SECONDS=0`: giới hạn thời gian mỗi câu; `0` là không giới hạn.
@@ -179,6 +184,7 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_MAX_QUESTION_RAG_QUERIES=0`: giới hạn số RAG query mỗi câu; `0` là không giới hạn.
 - `MMDLQA_LLM_INPUT_COST_PER_MILLION_TOKENS=0`, `MMDLQA_LLM_OUTPUT_COST_PER_MILLION_TOKENS=0`: giá fallback nếu provider không trả cost và model không có trong bảng giá local.
 - `MMDLQA_RETRIEVE_TOP_K=8`, `MMDLQA_RERANK_TOP_K=5`, `MMDLQA_MAX_CONTEXT_CHARS=16000`: giảm token.
+- `MMDLQA_PRINT_QUESTION_METRICS=1`: in live progress từng câu gồm elapsed time, LLM calls, estimated cost và answer preview.
 
 Mỗi câu hỏi ghi metrics vào `diagnostics.jsonl` trong `answer.diagnostics.metrics`: elapsed time, stage timings, LLM calls, token usage, estimated cost, và trạng thái limit. `run_summary.json` có phần tổng hợp `metrics` cho toàn run.
 

@@ -34,6 +34,7 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
             with tracker.stage("answering"):
                 result = answerer.answer(question, retrieved)
             result.diagnostics["metrics"] = tracker.snapshot()
+        print_question_progress(settings, result)
         output_rows.append({"id": result.qid, "answer": result.answer, "evidences": result.evidences})
         diagnostics.append(
             {
@@ -102,6 +103,7 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
         with QuestionRunTracker(settings, question.qid) as tracker:
             result = answerer.answer(question)
             result.diagnostics["metrics"] = tracker.snapshot()
+        print_question_progress(settings, result)
         output_rows.append({"id": result.qid, "answer": result.answer, "evidences": result.evidences})
         diagnostics.append(
             {
@@ -124,4 +126,18 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
     }
     (settings.output_dir / "run_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def print_question_progress(settings: Settings, result) -> None:
+    if not settings.print_question_metrics:
+        return
+    metrics = result.diagnostics.get("metrics", {})
+    elapsed = float(metrics.get("elapsed_sec", 0.0) or 0.0)
+    calls = int(metrics.get("llm_call_count", 0) or 0)
+    cost = float(metrics.get("total_estimated_cost_usd", 0.0) or 0.0)
+    answer = str(result.answer).replace("\n", " ")[:100]
+    print(
+        f"[qid={result.qid}] {elapsed:.2f}s | llm_calls={calls} | cost=${cost:.5f} | answer={answer}",
+        flush=True,
     )

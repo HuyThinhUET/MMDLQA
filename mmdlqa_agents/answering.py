@@ -153,7 +153,8 @@ class Answerer:
         )
 
     def rerank(self, question: Question, retrieved: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        candidates = retrieved[: self.settings.retrieve_top_k]
+        candidate_limit = max(self.settings.retrieve_top_k, self.settings.rerank_candidate_k)
+        candidates = retrieved[:candidate_limit]
         if not (self.settings.use_llm_rerank and self.llm.available and candidates):
             return candidates[: self.settings.rerank_top_k]
         items = [

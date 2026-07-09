@@ -199,6 +199,44 @@ def validate_coder_plan_output() -> Validator:
     return validate
 
 
+def validate_evidence_scan_output(candidate_count: int | set[int]) -> Validator:
+    valid_indices = set(range(candidate_count)) if isinstance(candidate_count, int) else set(candidate_count)
+
+    def validate(data: dict[str, Any]) -> ValidationResult:
+        errors: list[str] = []
+        assessments = data.get("assessments")
+        if not isinstance(assessments, list):
+            errors.append("assessments must be a list")
+            return ValidationResult(False, errors)
+        allowed = {"direct", "partial", "irrelevant"}
+        seen: set[int] = set()
+        for index, item in enumerate(assessments):
+            if not isinstance(item, dict):
+                errors.append(f"assessments[{index}] must be an object")
+                continue
+            item_index = item.get("i")
+            if not isinstance(item_index, int):
+                errors.append(f"assessments[{index}].i must be an integer")
+            elif item_index not in valid_indices:
+                errors.append(f"assessments[{index}].i is out of range")
+            else:
+                seen.add(item_index)
+            relevance = str(item.get("relevance", "")).strip().casefold()
+            if relevance not in allowed:
+                errors.append(f"assessments[{index}].relevance must be direct, partial, or irrelevant")
+            snippets = item.get("useful_snippets", [])
+            if snippets is not None and not isinstance(snippets, list):
+                errors.append(f"assessments[{index}].useful_snippets must be a list")
+            confidence = item.get("confidence", 0.0)
+            if not isinstance(confidence, (int, float)):
+                errors.append(f"assessments[{index}].confidence must be a number")
+        if not seen:
+            errors.append("at least one candidate assessment is required")
+        return ValidationResult(not errors, errors)
+
+    return validate
+
+
 def validate_claims(value: Any, valid_files: set[str], errors: list[str]) -> None:
     if not isinstance(value, list) or not value:
         errors.append("claims must be a non-empty list for supported answers")

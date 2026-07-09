@@ -12,6 +12,7 @@ from mmdlqa_retrieval.rag import SentenceRAG
 from .answering import Answerer
 from .critic import EvidenceCritic
 from .evidence import ledger_to_dicts
+from .evidence_scanner import EvidenceScanner
 from .planner import QuestionPlanner
 from .reasoners import CandidateAggregator, MultiExpertReasoner
 
@@ -24,6 +25,7 @@ class AgenticAnswerer:
         *,
         planner: QuestionPlanner | None = None,
         critic: EvidenceCritic | None = None,
+        scanner: EvidenceScanner | None = None,
         reasoner: Answerer | None = None,
         moe: MultiExpertReasoner | None = None,
         aggregator: CandidateAggregator | None = None,
@@ -34,6 +36,7 @@ class AgenticAnswerer:
         self.reasoner = reasoner or Answerer(settings)
         self.planner = planner or QuestionPlanner(settings)
         self.critic = critic or EvidenceCritic(settings)
+        self.scanner = scanner or EvidenceScanner(settings)
         self.moe = moe or MultiExpertReasoner(settings, self.reasoner)
         self.aggregator = aggregator or CandidateAggregator(settings)
 
@@ -129,10 +132,23 @@ class AgenticAnswerer:
             if tracker:
                 tracker.note_limit("rag_query_limit_reached")
             return
-        if query.top_k is None and should_expand_retrieval(query):
-            query.top_k = max(self.settings.retrieve_top_k, self.settings.max_files_for_question * 3, 30)
+        if query.top_k is None and (should_expand_retrieval(query) or self.settings.use_evidence_scanner):
+            query.top_k = max(
+                self.settings.retrieve_top_k,
+                self.settings.max_files_for_question * 3,
+                self.settings.evidence_scan_max_files * self.settings.evidence_scan_chunks_per_file,
+                30,
+            )
         state.rag_queries.append(query)
         retrieved = self.rag.search_sentence(query)
+        if self.scanner.enabled:
+            tracker = current_tracker()
+            if tracker:
+                with tracker.stage("agentic_evidence_scan", {"step_id": query.step_id}):
+                    retrieved, scan_diag = self.scanner.scan(state.question, query, retrieved)
+            else:
+                retrieved, scan_diag = self.scanner.scan(state.question, query, retrieved)
+            state.diagnostics.setdefault("evidence_scans", []).append(scan_diag)
         state.evidence_pool = merge_retrieved(state.evidence_pool, retrieved)
 
 
