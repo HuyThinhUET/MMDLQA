@@ -12,6 +12,8 @@ from mmdlqa_core.schema import Question
 from mmdlqa_core.contracts import ReasoningStep
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
 
+from .structured import json_chat_validated, validate_planner_output
+
 
 class QuestionPlanner:
     def __init__(self, settings: Settings):
@@ -53,14 +55,30 @@ class QuestionPlanner:
             "answer_type": question.answer_type,
             "prompt_security": untrusted_data_notice(),
         }
-        data = self.llm.json_chat(
+        schema_hint = {
+            "steps": [
+                {
+                    "sentence": "standalone RAG query sentence",
+                    "purpose": "source_retrieval|fact_lookup|table_calculation|image_understanding|audio_understanding|multi_doc_synthesis|final_answer",
+                    "depends_on": ["step ids"],
+                    "metadata": {},
+                }
+            ]
+        }
+        validated = json_chat_validated(
+            self.llm,
             [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(payload)},
             ],
+            validator=validate_planner_output(self.settings.agentic_max_steps),
+            schema_name="planner_steps",
+            schema_hint=schema_hint,
             model=self.models.model_for("planner"),
             max_tokens=900,
+            repair_max_tokens=600,
         )
+        data = validated.data
         raw_steps = data.get("steps", [])
         if not isinstance(raw_steps, list):
             return []

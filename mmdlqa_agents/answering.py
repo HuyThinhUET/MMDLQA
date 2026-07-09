@@ -20,6 +20,8 @@ from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
 from mmdlqa_retrieval.hybrid import top_evidence_files
 
+from .evidence import ledger_from_llm_output, ledger_to_dicts
+from .structured import json_chat_validated, validate_answer_output, validate_rerank_output
 from .tools import DeterministicToolbox
 
 
@@ -86,7 +88,8 @@ class Answerer:
         exact = question.answer_type.casefold() == "exact_match"
         system = secure_system_prompt(
             "You answer questions using only the provided data-lake context. "
-            "Return JSON with keys answer and evidences. Evidences must be a JSON array of file paths from the context. "
+            "Return JSON with keys answer, evidences, and claims. Evidences must be a JSON array of file paths from the context. "
+            "Claims must be a JSON array of atomic claims with evidence_files and optional quotes. "
             "If the context is insufficient, answer exactly: Not enough data to answer. "
             "For exact_match questions, keep answer minimal: number, label, option letter, date, or short phrase only. "
             "Do not invent external facts.",
@@ -102,22 +105,40 @@ class Answerer:
             "prompt_security": untrusted_data_notice(),
             "context": context,
         }
-        data = self.llm.json_chat(
+        valid_files = {r.chunk.file_path for r in narrowed}
+        schema_hint = {
+            "answer": "string",
+            "evidences": ["file paths from context"],
+            "claims": [
+                {
+                    "claim": "atomic claim",
+                    "evidence_files": ["file paths from context"],
+                    "quotes": ["short quotes or snippets"],
+                }
+            ],
+        }
+        validated = json_chat_validated(
+            self.llm,
             [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(user)},
             ],
+            validator=validate_answer_output(valid_files, require_claims=True),
+            schema_name="baseline_answer",
+            schema_hint=schema_hint,
             model=self.models.model_for("synthesis"),
             max_tokens=1200,
+            repair_max_tokens=800,
         )
+        data = validated.data
         answer = normalize_answer(str(data.get("answer", "")), exact, question)
         evidences = data.get("evidences", [])
         if not isinstance(evidences, list):
             evidences = []
-        valid_files = {r.chunk.file_path for r in narrowed}
         evidences = [str(e) for e in evidences if str(e) in valid_files]
         if not evidences and answer != "Not enough data to answer.":
             evidences = top_evidence_files(narrowed, self.settings.max_files_for_question)
+        claim_evidence = ledger_from_llm_output("baseline_answer", data, answer, evidences, narrowed)
         return AnswerResult(
             qid=question.qid,
             answer=answer or "Not enough data to answer.",
@@ -126,6 +147,8 @@ class Answerer:
                 "method": "llm",
                 "model": self.models.model_for("synthesis"),
                 "context_chunks": len(narrowed),
+                "validation": validated.diagnostics,
+                "evidence_ledger": ledger_to_dicts(claim_evidence),
             },
         )
 
@@ -143,7 +166,8 @@ class Answerer:
             for i, r in enumerate(candidates)
         ]
         try:
-            data = self.llm.json_chat(
+            validated = json_chat_validated(
+                self.llm,
                 [
                     {
                         "role": "system",
@@ -166,9 +190,14 @@ class Answerer:
                         ),
                     },
                 ],
+                validator=validate_rerank_output(len(candidates)),
+                schema_name="rerank",
+                schema_hint={"selected_indices": ["integer indices from candidates"]},
                 model=self.models.model_for("rerank"),
                 max_tokens=500,
+                repair_max_tokens=350,
             )
+            data = validated.data
             selected = data.get("selected_indices", [])
             ranked = []
             for idx in selected:
@@ -219,7 +248,7 @@ class Answerer:
             return None
         system = secure_system_prompt(
             "You answer image questions using only the provided images and file identifiers. "
-            "Return JSON with keys answer and notes. Do not answer from external knowledge.",
+            "Return JSON with keys answer, evidences, and notes. Do not answer from external knowledge.",
             question,
             include_answer_contract=True,
         )
@@ -239,18 +268,32 @@ class Answerer:
                 ),
             }
         ]
-        for path in image_paths[:20]:
-            content.append({"type": "text", "text": f"Untrusted image file identifier: {path.name}"})
+        for path, file_path in zip(image_paths[:20], file_paths[:20]):
+            content.append({"type": "text", "text": f"Untrusted image file identifier: {file_path}"})
             content.append(image_part_from_path(path, self.settings.max_image_side))
         try:
-            data = self.llm.json_chat(
+            validated = json_chat_validated(
+                self.llm,
                 [
                     {"role": "system", "content": system},
                     {"role": "user", "content": content},
                 ],
+                validator=validate_answer_output(set(file_paths), require_claims=False),
+                schema_name="vision_answer",
+                schema_hint={
+                    "answer": "string",
+                    "evidences": ["image file identifiers supplied in the prompt"],
+                    "notes": ["short per-image notes"],
+                },
                 model=self.models.model_for("vision"),
                 max_tokens=1200,
+                repair_max_tokens=700,
             )
+            data = validated.data
+            evidences = data.get("evidences", [])
+            if not isinstance(evidences, list):
+                evidences = file_paths
+            evidences = [str(item) for item in evidences if str(item) in set(file_paths)] or file_paths
             return AnswerResult(
                 qid=question.qid,
                 answer=normalize_answer(
@@ -258,8 +301,12 @@ class Answerer:
                     question.answer_type.casefold() == "exact_match",
                     question,
                 ),
-                evidences=dedupe_keep_order(file_paths),
-                diagnostics={"method": "vision_group", "model": self.models.model_for("vision")},
+                evidences=dedupe_keep_order(evidences),
+                diagnostics={
+                    "method": "vision_group",
+                    "model": self.models.model_for("vision"),
+                    "validation": validated.diagnostics,
+                },
             )
         except BudgetExceededError:
             raise

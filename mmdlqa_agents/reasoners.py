@@ -1,50 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
 
 from mmdlqa_core.config import Settings
-from mmdlqa_core.contracts import AgentState, AnswerCandidate, ToolCallRecord
+from mmdlqa_core.contracts import AgentState, AnswerCandidate
 from mmdlqa_core.metrics import BudgetExceededError
 from mmdlqa_core.model_router import ModelRouter
 from mmdlqa_core.openrouter import OpenRouterClient
 from mmdlqa_core.prompting import answer_contract_payload, secure_system_prompt, untrusted_data_notice
-from mmdlqa_core.schema import AnswerResult, Question, RetrievedChunk
 from mmdlqa_core.utils import dedupe_keep_order, json_dumps, normalize_text
 from mmdlqa_retrieval.hybrid import top_evidence_files
 
 from .answering import Answerer, normalize_answer
-
-
-class ToolReasoner:
-    def __init__(self, settings: Settings, answerer: Answerer):
-        self.settings = settings
-        self.answerer = answerer
-
-    def run(self, state: AgentState) -> list[AnswerCandidate]:
-        candidates: list[AnswerCandidate] = []
-        vision = self.answerer.maybe_answer_image_group(state.question, state.evidence_pool)
-        if vision:
-            candidates.append(candidate_from_result("vision_tool", vision, confidence=0.9))
-            state.tool_calls.append(
-                ToolCallRecord(
-                    tool_name="vision_group",
-                    input={"question": state.question.question},
-                    output={"answer": vision.answer, "evidences": vision.evidences},
-                )
-            )
-
-        deterministic = self.answerer.try_deterministic(state.question, state.evidence_pool)
-        if deterministic:
-            candidates.append(candidate_from_result("deterministic_tool", deterministic, confidence=0.95))
-            state.tool_calls.append(
-                ToolCallRecord(
-                    tool_name=str(deterministic.diagnostics.get("method", "deterministic")),
-                    input={"question": state.question.question},
-                    output={"answer": deterministic.answer, "evidences": deterministic.evidences},
-                )
-            )
-        return candidates
+from .evidence import ledger_from_llm_output, supported_claim_count
+from .structured import json_chat_validated, validate_answer_output
+from .tool_agents import CoderAgent, ToolAgent
 
 
 class PromptedReasoner:
@@ -111,10 +81,30 @@ class PromptedReasoner:
             "prompt_security": untrusted_data_notice(),
             "instructions": {
                 "evidences_must_be_files_from_context": True,
+                "claims_required": True,
+                "claims_schema": {
+                    "claim": "one atomic statement supporting the answer",
+                    "evidence_files": ["file paths from context supporting this claim"],
+                    "quotes": ["short quote or data snippet when available"],
+                },
                 "insufficient_answer": "Not enough data to answer.",
             },
         }
-        data = self.llm.json_chat(
+        valid_files = {result.chunk.file_path for result in narrowed}
+        schema_hint = {
+            "answer": "string",
+            "evidences": ["file paths from context"],
+            "rationale": "short rationale",
+            "claims": [
+                {
+                    "claim": "atomic claim",
+                    "evidence_files": ["file paths from context"],
+                    "quotes": ["short quotes or snippets"],
+                }
+            ],
+        }
+        validated = json_chat_validated(
+            self.llm,
             [
                 {
                     "role": "system",
@@ -126,28 +116,35 @@ class PromptedReasoner:
                 },
                 {"role": "user", "content": json_dumps(payload)},
             ],
+            validator=validate_answer_output(valid_files, require_claims=True),
+            schema_name=f"{self.name}_answer",
+            schema_hint=schema_hint,
             model=self.model,
             max_tokens=1200,
+            repair_max_tokens=800,
         )
+        data = validated.data
         answer = normalize_answer(str(data.get("answer", "")), exact, state.question)
         evidences = data.get("evidences", [])
         if not isinstance(evidences, list):
             evidences = []
-        valid_files = {result.chunk.file_path for result in narrowed}
         evidences = [str(item) for item in evidences if str(item) in valid_files]
         if not evidences and answer and answer != "Not enough data to answer.":
             evidences = top_evidence_files(narrowed, self.settings.max_files_for_question)
         rationale = normalize_text(str(data.get("rationale", "")))
+        claim_evidence = ledger_from_llm_output(self.name, data, answer, evidences, narrowed)
         return AnswerCandidate(
             source=self.name,
             answer=answer or "Not enough data to answer.",
             evidences=dedupe_keep_order(evidences),
+            claim_evidence=claim_evidence,
             confidence=self.confidence,
             rationale=rationale,
             diagnostics={
                 "method": "llm_reasoner",
                 "model": self.model or self.settings.openrouter_model,
                 "context_chunks": len(narrowed),
+                "validation": validated.diagnostics,
             },
         )
 
@@ -162,6 +159,7 @@ class FallbackReasoner:
                 source="fallback",
                 answer="Not enough data to answer.",
                 evidences=top_evidence_files(state.evidence_pool, self.settings.max_files_for_question),
+                claim_evidence=[],
                 confidence=0.05,
                 diagnostics={"method": "fallback"},
             )
@@ -189,16 +187,19 @@ class CandidateAggregator:
         if not state.candidates:
             return AnswerCandidate(source="empty", answer="Not enough data to answer.", confidence=0.0)
 
-        def score(candidate: AnswerCandidate) -> tuple[float, int, int, float]:
+        def score(candidate: AnswerCandidate) -> tuple[float, int, int, int, float]:
             has_answer = int(bool(candidate.answer and candidate.answer != "Not enough data to answer."))
             valid_evidence_count = sum(1 for item in candidate.evidences if self._valid_evidence_file(item, state))
             invalid_evidence_count = sum(1 for item in candidate.evidences if not self._valid_evidence_file(item, state))
+            supported_claims = supported_claim_count(candidate.claim_evidence)
             evidence_bonus = min(valid_evidence_count, self.settings.max_files_for_question) * 0.03
+            claim_bonus = min(supported_claims, 4) * 0.06
             invalid_penalty = invalid_evidence_count * 0.2
             answer_bonus = 0.2 if has_answer else 0.0
             return (
-                candidate.confidence + evidence_bonus + answer_bonus - invalid_penalty,
+                candidate.confidence + evidence_bonus + claim_bonus + answer_bonus - invalid_penalty,
                 has_answer,
+                supported_claims,
                 valid_evidence_count,
                 -invalid_evidence_count,
             )
@@ -212,7 +213,7 @@ class CandidateAggregator:
 
 
 def build_reasoners(settings: Settings, answerer: Answerer):
-    reasoners = [ToolReasoner(settings, answerer)]
+    reasoners = [CoderAgent(settings, answerer), ToolAgent(settings, answerer)]
     if settings.use_agentic_moe:
         router = ModelRouter(settings)
         models = [item.strip() for item in settings.agentic_moe_models.split(",") if item.strip()]
@@ -228,7 +229,8 @@ def build_reasoners(settings: Settings, answerer: Answerer):
                     confidence=0.72,
                     system_prompt=(
                         "You are an exact-answer specialist for data-lake QA. "
-                        "Use only the provided context. Return JSON with keys answer, evidences, rationale. "
+                        "Use only the provided context. Return JSON with keys answer, evidences, rationale, claims. "
+                        "Claims must be atomic statements with evidence_files and optional quotes. "
                         "For exact_match, answer with only the minimal value, label, option letter, date, or short phrase. "
                         "If the context is insufficient, answer exactly: Not enough data to answer."
                     ),
@@ -242,7 +244,8 @@ def build_reasoners(settings: Settings, answerer: Answerer):
                     system_prompt=(
                         "You are a multi-hop synthesis specialist for data-lake QA. "
                         "Use the reasoning steps and context to combine evidence across files when needed. "
-                        "Return JSON with keys answer, evidences, rationale. "
+                        "Return JSON with keys answer, evidences, rationale, claims. "
+                        "Claims must be atomic statements with evidence_files and optional quotes. "
                         "Evidences must be file paths from the context. "
                         "If the context does not support the answer, answer exactly: Not enough data to answer."
                     ),
@@ -251,13 +254,3 @@ def build_reasoners(settings: Settings, answerer: Answerer):
         )
     reasoners.append(FallbackReasoner(settings))
     return reasoners
-
-
-def candidate_from_result(source: str, result: AnswerResult, *, confidence: float) -> AnswerCandidate:
-    return AnswerCandidate(
-        source=source,
-        answer=result.answer,
-        evidences=result.evidences,
-        confidence=confidence,
-        diagnostics=result.diagnostics,
-    )

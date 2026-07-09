@@ -10,6 +10,9 @@ from mmdlqa_core.openrouter import OpenRouterClient
 from mmdlqa_core.prompting import secure_system_prompt, untrusted_data_notice
 from mmdlqa_core.utils import json_dumps, normalize_text
 
+from .evidence import ledger_to_dicts, unsupported_claims
+from .structured import json_chat_validated, validate_critic_output
+
 
 class EvidenceCritic:
     def __init__(self, settings: Settings):
@@ -41,6 +44,15 @@ class EvidenceCritic:
         if candidate.answer != "Not enough data to answer." and not candidate.evidences:
             issues.append("answer_without_evidence")
             missing_queries.append(f"Find source evidence for this answer: {state.question.question}")
+        if candidate.answer != "Not enough data to answer." and not candidate.claim_evidence:
+            issues.append("answer_without_claim_evidence")
+            missing_queries.append(f"Find claim-level evidence for this answer: {state.question.question}")
+        unsupported = unsupported_claims(candidate.claim_evidence)
+        if unsupported:
+            issues.append("unsupported_claims: " + "; ".join(claim.claim[:120] for claim in unsupported[:3]))
+            missing_queries.extend(
+                f"Find evidence supporting this claim: {claim.claim}" for claim in unsupported[:2]
+            )
         if not state.evidence_pool and candidate.answer != "Not enough data to answer.":
             issues.append("answered_without_retrieved_context")
             missing_queries.append(state.question.question)
@@ -81,6 +93,7 @@ class EvidenceCritic:
                 "source": candidate.source,
                 "answer": candidate.answer,
                 "evidences": candidate.evidences,
+                "claim_evidence": ledger_to_dicts(candidate.claim_evidence),
                 "rationale": candidate.rationale,
             },
             "steps": [
@@ -102,14 +115,25 @@ class EvidenceCritic:
                 "When they are natural-language text, write them in the same language as the original question."
             ),
         )
-        data = self.llm.json_chat(
+        schema_hint = {
+            "ok": "boolean",
+            "issues": ["short issue codes or messages"],
+            "missing_queries": ["standalone neutral RAG query sentences"],
+        }
+        validated = json_chat_validated(
+            self.llm,
             [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json_dumps(payload)},
             ],
+            validator=validate_critic_output(),
+            schema_name="critic_report",
+            schema_hint=schema_hint,
             model=self.models.model_for("critic"),
             max_tokens=700,
+            repair_max_tokens=450,
         )
+        data = validated.data
         issues = data.get("issues", [])
         missing_queries = data.get("missing_queries", [])
         if not isinstance(issues, list):
@@ -122,7 +146,7 @@ class EvidenceCritic:
             ok=ok,
             issues=[normalize_text(str(item)) for item in issues if normalize_text(str(item))],
             missing_queries=dedupe_queries(str(item) for item in missing_queries),
-            diagnostics={"model": self.models.model_for("critic")},
+            diagnostics={"model": self.models.model_for("critic"), "validation": validated.diagnostics},
         )
 
 

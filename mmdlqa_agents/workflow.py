@@ -11,6 +11,7 @@ from mmdlqa_retrieval.rag import SentenceRAG
 
 from .answering import Answerer
 from .critic import EvidenceCritic
+from .evidence import ledger_to_dicts
 from .planner import QuestionPlanner
 from .reasoners import CandidateAggregator, MultiExpertReasoner
 
@@ -86,6 +87,7 @@ class AgenticAnswerer:
                 break
 
         result = result_from_candidate(question, selected, state, self.settings)
+        state.evidence_ledger = selected.claim_evidence
         state.final_answer = result
 
         result.diagnostics = {
@@ -161,6 +163,7 @@ def result_from_candidate(
             "selected_candidate": candidate.source,
             "candidate_confidence": candidate.confidence,
             "candidate_diagnostics": candidate.diagnostics,
+            "evidence_ledger": ledger_to_dicts(candidate.claim_evidence),
         },
     )
 
@@ -216,6 +219,7 @@ def summarize_state(state: AgentState) -> dict:
         ],
         "evidence_count": len(state.evidence_pool),
         "evidence_files": sorted({result.chunk.file_path for result in state.evidence_pool}),
+        "evidence_ledger": ledger_to_dicts(state.evidence_ledger),
         "tool_calls": [
             {
                 "tool_name": call.tool_name,
@@ -231,6 +235,7 @@ def summarize_state(state: AgentState) -> dict:
                 "source": candidate.source,
                 "answer": candidate.answer,
                 "evidences": candidate.evidences,
+                "claim_evidence": ledger_to_dicts(candidate.claim_evidence),
                 "confidence": candidate.confidence,
                 "rationale": candidate.rationale,
                 "diagnostics": candidate.diagnostics,

@@ -49,6 +49,9 @@ class Settings:
     use_agentic_planner: bool = True
     use_agentic_moe: bool = True
     use_agentic_critic: bool = True
+    use_agentic_tools: bool = True
+    use_agentic_coder: bool = True
+    use_coder_planner: bool = False
     planner_model: str = DEFAULT_ROLE_MODELS["planner"]
     rerank_model: str = DEFAULT_ROLE_MODELS["rerank"]
     exact_model: str = DEFAULT_ROLE_MODELS["exact"]
@@ -109,6 +112,9 @@ class Settings:
             use_agentic_planner=_bool_env("MMDLQA_USE_AGENTIC_PLANNER", True),
             use_agentic_moe=_bool_env("MMDLQA_USE_AGENTIC_MOE", True),
             use_agentic_critic=_bool_env("MMDLQA_USE_AGENTIC_CRITIC", True),
+            use_agentic_tools=_bool_env("MMDLQA_USE_AGENTIC_TOOLS", True),
+            use_agentic_coder=_bool_env("MMDLQA_USE_AGENTIC_CODER", True),
+            use_coder_planner=_bool_env("MMDLQA_USE_CODER_PLANNER", False),
             planner_model=os.getenv("MMDLQA_PLANNER_MODEL", DEFAULT_ROLE_MODELS["planner"]),
             rerank_model=os.getenv("MMDLQA_RERANK_MODEL", DEFAULT_ROLE_MODELS["rerank"]),
             exact_model=os.getenv("MMDLQA_EXACT_MODEL", DEFAULT_ROLE_MODELS["exact"]),

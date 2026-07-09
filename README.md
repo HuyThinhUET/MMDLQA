@@ -128,7 +128,10 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `mmdlqa_retrieval/`: search/RAG; `SentenceRAG` nhận một câu truy vấn tự nhiên rồi trả về chunks liên quan.
 - `mmdlqa_agents/`: multi-agent workflow `Planner -> RAG -> Tool/Coder -> MoE Reasoners -> Aggregator -> Critic`.
   - `planner.py`: tách câu hỏi thành các `ReasoningStep`; mỗi step là một sentence có thể đưa thẳng vào RAG.
-  - `reasoners.py`: chạy deterministic tool trước, rồi các LLM experts như exact-answer và synthesis khi bật MoE.
+  - `tool_agents.py`: tách `CoderAgent` cho table/SQL/calculation plan + safe executor và `ToolAgent` cho vision/deterministic tools.
+  - `reasoners.py`: điều phối Coder/Tool trước, rồi các LLM experts như exact-answer và synthesis khi bật MoE.
+  - `evidence.py`: tạo evidence ledger dạng claim -> file/chunk/quote cho từng candidate.
+  - `structured.py`: validate JSON output của planner/rerank/reasoner/critic/coder và repair một lần nếu sai schema.
   - `critic.py`: kiểm tra answer/evidence, có thể yêu cầu retrieve bổ sung bằng `missing_queries`.
   - `workflow.py`: điều phối loop nhiều round và ghi diagnostics chi tiết.
 - `mmdlqa_orchestration/`: runner pipeline nối preprocess, retrieval và agent để xuất submission.
@@ -144,6 +147,9 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_AGENTIC_PLANNER=0`: dùng rule-based planner thay vì LLM planner.
 - `MMDLQA_USE_AGENTIC_MOE=0`: chỉ dùng deterministic tools + fallback, không gọi MoE reasoners.
 - `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.
+- `MMDLQA_USE_AGENTIC_TOOLS=1`: bật ToolAgent cho vision/deterministic tools.
+- `MMDLQA_USE_AGENTIC_CODER=1`: bật CoderAgent cho table/SQL/calculation tasks.
+- `MMDLQA_USE_CODER_PLANNER=0`: bật LLM coder planner khi set `1`; mặc định tắt để không tăng cost.
 - `MMDLQA_USE_MODEL_ROUTER=1`: bật chọn model theo vai trò thay vì một model chung.
 - `MMDLQA_PLANNER_MODEL=google/gemini-2.5-flash-lite`: model tách câu hỏi thành steps.
 - `MMDLQA_RERANK_MODEL=google/gemini-2.5-flash-lite`: model rerank chunks.

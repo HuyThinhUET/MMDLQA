@@ -17,6 +17,12 @@ class DeterministicToolbox:
         self.settings = settings
 
     def try_answer(self, question: Question, retrieved: list[RetrievedChunk]) -> AnswerResult | None:
+        coder = self.try_coder_answer(question, retrieved)
+        if coder is not None:
+            return coder
+        return self.try_tool_answer(question, retrieved)
+
+    def try_coder_answer(self, question: Question, retrieved: list[RetrievedChunk]) -> AnswerResult | None:
         significant = self.try_count_significant_genes(question, retrieved)
         if significant is not None:
             answer, evidence = significant
@@ -43,6 +49,19 @@ class DeterministicToolbox:
                     diagnostics={"method": "deterministic_correlation"},
                 )
 
+        class_avg = self.try_class_grade_multiple_choice(question, retrieved)
+        if class_avg is not None:
+            answer, evidence = class_avg
+            return AnswerResult(
+                qid=question.qid,
+                answer=answer,
+                evidences=[evidence],
+                diagnostics={"method": "deterministic_sql_average_choice"},
+            )
+
+        return None
+
+    def try_tool_answer(self, question: Question, retrieved: list[RetrievedChunk]) -> AnswerResult | None:
         q = question.question.casefold()
         if "number_image" in q and "blue digit" in q:
             answer = self.try_count_blue_images(retrieved)
@@ -63,16 +82,6 @@ class DeterministicToolbox:
                     evidences=top_evidence_files(retrieved, self.settings.max_files_for_question),
                     diagnostics={"method": "ocr_digit_heuristic"},
                 )
-
-        class_avg = self.try_class_grade_multiple_choice(question, retrieved)
-        if class_avg is not None:
-            answer, evidence = class_avg
-            return AnswerResult(
-                qid=question.qid,
-                answer=answer,
-                evidences=[evidence],
-                diagnostics={"method": "deterministic_sql_average_choice"},
-            )
 
         return None
 
