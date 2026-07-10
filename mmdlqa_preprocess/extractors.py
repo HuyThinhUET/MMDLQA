@@ -529,6 +529,10 @@ def extract_audio(path: Path, settings: Settings) -> tuple[str, dict[str, Any]]:
 def extract_video(path: Path, settings: Settings, llm: OpenRouterClient | None) -> tuple[str, dict[str, Any]]:
     parts = [f"Video file: {path.name}"]
     metadata: dict[str, Any] = {}
+    if not settings.use_video_processing:
+        metadata["video_processing_skipped"] = True
+        parts.append("Video processing skipped by MMDLQA_USE_VIDEO_PROCESSING=0.")
+        return "\n".join(parts), metadata
     duration = media_duration(path)
     if duration:
         metadata["duration_sec"] = duration

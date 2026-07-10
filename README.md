@@ -165,6 +165,7 @@ Code đã được tách theo ranh giới phát triển thay vì gom trong một
 - `MMDLQA_USE_VISION_LLM=0`: không gọi vision LLM cho câu hỏi ảnh.
 - `MMDLQA_USE_LLM_SUMMARIES=1`: caption mọi ảnh lúc build index, tốn quota hơn nhưng retrieve tốt hơn.
 - `MMDLQA_USE_WHISPER=0`: không transcribe audio/video.
+- `MMDLQA_USE_VIDEO_PROCESSING=0`: bỏ qua `ffprobe`, tách audio và sample frame cho video trong lúc build index.
 - `MMDLQA_USE_AGENTIC_PLANNER=0`: dùng rule-based planner thay vì LLM planner.
 - `MMDLQA_USE_AGENTIC_MOE=0`: chỉ dùng deterministic tools + fallback, không gọi MoE reasoners.
 - `MMDLQA_USE_AGENTIC_CRITIC=0`: chỉ dùng static critic, không gọi LLM critic.

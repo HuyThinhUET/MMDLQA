@@ -49,6 +49,7 @@ class Settings:
     use_llm_rerank: bool = True
     use_vision_llm: bool = True
     use_whisper: bool = True
+    use_video_processing: bool = True
     use_sentence_transformers: bool = False
     use_question_classifier: bool = True
     use_agentic_planner: bool = True
@@ -135,6 +136,7 @@ class Settings:
             use_llm_rerank=_bool_env("MMDLQA_USE_LLM_RERANK", True),
             use_vision_llm=_bool_env("MMDLQA_USE_VISION_LLM", True),
             use_whisper=_bool_env("MMDLQA_USE_WHISPER", True),
+            use_video_processing=_bool_env("MMDLQA_USE_VIDEO_PROCESSING", True),
             use_sentence_transformers=_bool_env("MMDLQA_USE_SENTENCE_TRANSFORMERS", False),
             use_question_classifier=_bool_env("MMDLQA_USE_QUESTION_CLASSIFIER", True),
             use_agentic_planner=_bool_env("MMDLQA_USE_AGENTIC_PLANNER", True),
