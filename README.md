@@ -1,6 +1,6 @@
 # iSE Challenge 2026 Multimodal QA Baseline
 
-Baseline này nhận data lake trong `input/raw`, đọc câu hỏi từ `input/questions.xlsx`, build index đa phương thức, retrieve evidence, gọi OpenRouter để sinh đáp án, rồi xuất `output/submission.csv` đúng format:
+Baseline này nhận data lake trong `input/raw`, đọc câu hỏi từ `input/questions.csv` hoặc `input/questions.xlsx`, build index đa phương thức, retrieve evidence, gọi OpenRouter để sinh đáp án, rồi xuất `output/submission.csv` đúng format:
 
 ```csv
 id,answer,evidences
@@ -12,7 +12,7 @@ id,answer,evidences
 Không nên upload cả project code lên Drive mỗi lần sửa. Luồng gọn hơn:
 
 1. Code nằm trên GitHub.
-2. Drive chỉ giữ file câu hỏi nhẹ, ví dụ `MyDrive/MMDLQA_data/input/questions.xlsx`, và thư mục output.
+2. Drive chỉ giữ file câu hỏi nhẹ, ví dụ `MyDrive/MMDLQA_data/input/questions.csv`, và thư mục output.
 3. Data lake nặng để dưới dạng Google Drive share links: `raw_1.zip`, `raw_2.zip`, `text_cleaning_output.zip`.
 4. Colab clone/pull code từ GitHub vào `/content/MMDLQA`, rồi tải dataset zip bằng `gdown` vào local runtime.
 5. Colab đọc câu hỏi từ Drive, đọc data nặng từ local runtime, và ghi output về Drive.
@@ -23,7 +23,7 @@ Drive chỉ cần chứa:
 ```text
 MMDLQA_data/
   input/
-    questions.xlsx
+    questions.csv
   output/
 ```
 
@@ -42,7 +42,7 @@ Nếu bạn mới dùng Colab, cách dễ nhất là mở notebook [colab_quicks
 Mount Drive chỉ cần có file câu hỏi:
 
 ```text
-input/questions.xlsx
+input/questions.csv
 ```
 
 Các file nặng được tải bằng `gdown` vào local runtime:
@@ -200,5 +200,5 @@ Mỗi câu hỏi ghi metrics vào `diagnostics.jsonl` trong `answer.diagnostics.
 
 ## Notes
 
-- `questions.xlsx` cần có cột `STT` và `Question`; `STT` được giữ nguyên làm `id` trong `submission.csv`, kể cả khi không liên tục hoặc không được sắp xếp.
+- `questions.csv` hoặc `questions.xlsx` cần có cột `STT` và `Question`; `STT` được giữ nguyên làm `id` trong `submission.csv`, kể cả khi không liên tục hoặc không được sắp xếp.
 - Các câu định lượng đơn giản có hook deterministic, ví dụ Pearson correlation trên CSV/XLSX nếu `pandas` có sẵn.
