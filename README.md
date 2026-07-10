@@ -1,6 +1,6 @@
 # iSE Challenge 2026 Multimodal QA Baseline
 
-Baseline này nhận data lake trong `input/raw`, đọc câu hỏi từ `input/sample_questions.xlsx`, build index đa phương thức, retrieve evidence, gọi OpenRouter để sinh đáp án, rồi xuất `output/submission.csv` đúng format:
+Baseline này nhận data lake trong `input/raw`, đọc câu hỏi từ `input/questions.xlsx`, build index đa phương thức, retrieve evidence, gọi OpenRouter để sinh đáp án, rồi xuất `output/submission.csv` đúng format:
 
 ```csv
 id,answer,evidences
@@ -12,22 +12,18 @@ id,answer,evidences
 Không nên upload cả project code lên Drive mỗi lần sửa. Luồng gọn hơn:
 
 1. Code nằm trên GitHub.
-2. Data lake nằm trên Google Drive, ví dụ `MyDrive/MMDLQA_data/input/raw`.
-3. Colab clone/pull code từ GitHub vào `/content/MMDLQA`.
-4. Colab đọc input và ghi output qua biến môi trường trỏ về Drive.
-5. Khi sửa code ở máy local: `git add`, `git commit`, `git push`; qua Colab chạy lại cell clone/pull.
+2. Drive chỉ giữ file câu hỏi nhẹ, ví dụ `MyDrive/MMDLQA_data/input/questions.xlsx`, và thư mục output.
+3. Data lake nặng để dưới dạng Google Drive share links: `raw_1.zip`, `raw_2.zip`, `text_cleaning_output.zip`.
+4. Colab clone/pull code từ GitHub vào `/content/MMDLQA`, rồi tải dataset zip bằng `gdown` vào local runtime.
+5. Colab đọc câu hỏi từ Drive, đọc data nặng từ local runtime, và ghi output về Drive.
+6. Khi sửa code ở máy local: `git add`, `git commit`, `git push`; qua Colab chạy lại cell clone/pull.
 
 Drive chỉ cần chứa:
 
 ```text
 MMDLQA_data/
   input/
-    sample_questions.xlsx
-    text_cleaning_output/
-      by_file/
-      text_cleaning_manifest.csv
-    raw/
-      ...
+    questions.xlsx
   output/
 ```
 
@@ -35,26 +31,35 @@ Code repo không cần nằm trong Drive.
 
 ## Colab Setup
 
-Nếu bạn mới dùng Colab, cách dễ nhất là mở notebook [colab_quickstart.ipynb](colab_quickstart.ipynb), sửa `REPO_URL` và `DRIVE_DATA_DIR`, rồi chạy lần lượt từng cell.
+Nếu bạn mới dùng Colab, cách dễ nhất là mở notebook [colab_quickstart.ipynb](colab_quickstart.ipynb), sửa `REPO_URL`, `DRIVE_DATA_DIR`, và paste link/id Google Drive cho `raw_1.zip`, `raw_2.zip`, `text_cleaning_output.zip`, rồi chạy lần lượt từng cell.
 
 ```bash
 !apt-get update -y
 !apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-vie tesseract-ocr-chi-sim libreoffice
-!pip install -r requirements.txt
+!pip install -r requirements.txt gdown
 ```
 
-Mount Drive hoặc upload data lake vào:
+Mount Drive chỉ cần có file câu hỏi:
 
 ```text
-input/raw/
-input/text_cleaning_output/
-input/sample_questions.xlsx
+input/questions.xlsx
+```
+
+Các file nặng được tải bằng `gdown` vào local runtime:
+
+```text
+/content/MMDLQA_data_runtime/input/raw/raw_1.zip
+/content/MMDLQA_data_runtime/input/raw/raw_2.zip
+/content/MMDLQA_data_runtime/input/text_cleaning_output/
 ```
 
 `input/text_cleaning_output` is now treated as the preferred preprocessed knowledge source.
 The index loader reads `by_file/*/clean.txt` plus `metadata.json` first, then extracts raw files
 from `input/raw` only when they are not already covered by the cleaned manifest. With the current
 local data this gives 60 preprocessed files and 26 raw fallback files, mostly CSV/XLSX tables.
+If local `input/raw` contains `raw_1.zip` and `raw_2.zip` instead of an already-unzipped data lake,
+the index builder extracts those zip files into the configured cache directory under `raw_unzipped/` and indexes
+the files inside them.
 
 Set OpenRouter key:
 
@@ -117,7 +122,7 @@ output/cache/chunks.jsonl
 ## Pipeline
 
 1. Load `input/text_cleaning_output/by_file/*/clean.txt` plus metadata as the preferred offline preprocess output.
-2. Walk `input/raw` and extract only files not covered by the cleaned output, usually tables/audio/legacy docs.
+2. Walk `input/raw`; zip archives such as `raw_1.zip`/`raw_2.zip` are extracted into cache, then only files not covered by the cleaned output are extracted as raw fallback.
 3. Extract nội dung:
    - CSV/XLSX: cột, sheet, preview rows.
    - TXT/MD/HTML/SQL/code: text sạch.
@@ -195,6 +200,5 @@ Mỗi câu hỏi ghi metrics vào `diagnostics.jsonl` trong `answer.diagnostics.
 
 ## Notes
 
-- `sample_questions.xlsx` hiện có cột `STT`, `Question`, `Groundtruth`, `Data Sources`, `Answer Type`; pipeline chỉ dùng `STT`, `Question`, `Answer Type` khi suy luận.
-- `Groundtruth` và `Data Sources` chỉ được đọc để debug/dev, không dùng làm evidence trong submission.
+- `questions.xlsx` cần có cột `STT` và `Question`; `STT` được giữ nguyên làm `id` trong `submission.csv`, kể cả khi không liên tục hoặc không được sắp xếp.
 - Các câu định lượng đơn giản có hook deterministic, ví dụ Pearson correlation trên CSV/XLSX nếu `pandas` có sẵn.

@@ -15,17 +15,22 @@ from mmdlqa_core.utils import normalize_text
 from .extractors import make_chunks, make_light_summary, modality_for
 
 
-def load_cleaned_text_records(settings: Settings) -> tuple[list[FileRecord], set[str]]:
+def load_cleaned_text_records(
+    settings: Settings,
+    raw_files: list[Path] | None = None,
+    raw_roots: dict[Path, Path] | None = None,
+) -> tuple[list[FileRecord], set[str]]:
     root = settings.text_cleaning_output_dir
     by_file = root / "by_file"
     if not root.exists() or not by_file.exists():
         return [], set()
 
-    raw_files = list_raw_files(settings.raw_dir)
+    raw_files = raw_files if raw_files is not None else list_raw_files(settings.raw_dir)
+    raw_roots = raw_roots or {}
     records: list[FileRecord] = []
     coverage_keys: set[str] = set()
     for metadata_path in sorted(by_file.glob("*/metadata.json")):
-        record = record_from_cleaned_dir(metadata_path.parent, metadata_path, settings, raw_files)
+        record = record_from_cleaned_dir(metadata_path.parent, metadata_path, settings, raw_files, raw_roots)
         if record is None:
             continue
         records.append(record)
@@ -38,6 +43,7 @@ def record_from_cleaned_dir(
     metadata_path: Path,
     settings: Settings,
     raw_files: list[Path],
+    raw_roots: dict[Path, Path],
 ) -> FileRecord | None:
     clean_path = item_dir / "clean.txt"
     raw_text_path = item_dir / "raw.txt"
@@ -50,7 +56,7 @@ def record_from_cleaned_dir(
         rel_path = item_dir.name
     clean_text = normalize_text(clean_path.read_text(encoding="utf-8", errors="ignore"))
     raw_text = normalize_text(raw_text_path.read_text(encoding="utf-8", errors="ignore")) if raw_text_path.exists() else ""
-    source_path = find_raw_source_path(rel_path, metadata, settings.raw_dir, raw_files)
+    source_path = find_raw_source_path(rel_path, metadata, settings.raw_dir, raw_files, raw_roots)
     abs_path = str(source_path.resolve()) if source_path else str(clean_path.resolve())
     modality = modality_for(Path(rel_path))
 
@@ -116,10 +122,16 @@ def find_raw_source_path(
     metadata: dict[str, Any],
     raw_dir: Path,
     raw_files: list[Path],
+    raw_roots: dict[Path, Path] | None = None,
 ) -> Path | None:
+    raw_roots = raw_roots or {}
     direct = raw_dir / rel_path
     if direct.exists():
         return direct
+    for root in unique_roots(raw_roots):
+        direct = root / rel_path
+        if direct.exists():
+            return direct
 
     source_name = Path(str(metadata.get("source_path", ""))).name
     candidates = [rel_path, Path(rel_path).name, source_name]
@@ -134,17 +146,24 @@ def find_raw_source_path(
     source_key = file_key(source_name)
     keys = [key for key in [rel_key, source_key] if key]
     for path in raw_files:
-        raw_key = file_key(path.relative_to(raw_dir).as_posix())
+        raw_root = raw_root_for(path, raw_dir, raw_roots)
+        raw_key = file_key(path.relative_to(raw_root).as_posix())
         raw_name_key = file_key(path.name)
         if any(is_probable_same_file(key, raw_key) or is_probable_same_file(key, raw_name_key) for key in keys):
             return path
-    fuzzy = find_similar_raw_source(rel_path, raw_dir, raw_files)
+    fuzzy = find_similar_raw_source(rel_path, raw_dir, raw_files, raw_roots)
     if fuzzy:
         return fuzzy
     return None
 
 
-def find_similar_raw_source(rel_path: str, raw_dir: Path, raw_files: list[Path]) -> Path | None:
+def find_similar_raw_source(
+    rel_path: str,
+    raw_dir: Path,
+    raw_files: list[Path],
+    raw_roots: dict[Path, Path] | None = None,
+) -> Path | None:
+    raw_roots = raw_roots or {}
     rel = Path(rel_path)
     rel_parent = rel.parent.as_posix()
     rel_suffix = rel.suffix.casefold()
@@ -155,7 +174,8 @@ def find_similar_raw_source(rel_path: str, raw_dir: Path, raw_files: list[Path])
     best_path: Path | None = None
     best_score = 0.0
     for path in raw_files:
-        raw_rel = path.relative_to(raw_dir)
+        raw_root = raw_root_for(path, raw_dir, raw_roots)
+        raw_rel = path.relative_to(raw_root)
         if raw_rel.parent.as_posix() != rel_parent:
             continue
         if path.suffix.casefold() != rel_suffix:
@@ -168,6 +188,21 @@ def find_similar_raw_source(rel_path: str, raw_dir: Path, raw_files: list[Path])
             best_score = score
             best_path = path
     return best_path if best_score >= 0.68 else None
+
+
+def raw_root_for(path: Path, default_root: Path, raw_roots: dict[Path, Path]) -> Path:
+    return raw_roots.get(path.resolve()) or raw_roots.get(path) or default_root
+
+
+def unique_roots(raw_roots: dict[Path, Path]) -> list[Path]:
+    seen: set[Path] = set()
+    roots: list[Path] = []
+    for root in raw_roots.values():
+        resolved = root.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            roots.append(root)
+    return roots
 
 
 def coverage_keys_for_record(record: FileRecord) -> set[str]:

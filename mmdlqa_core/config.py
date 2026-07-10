@@ -29,7 +29,7 @@ class Settings:
     input_dir: Path = Path("input")
     raw_dir: Path = Path("input/raw")
     text_cleaning_output_dir: Path = Path("input/text_cleaning_output")
-    questions_path: Path = Path("input/sample_questions.xlsx")
+    questions_path: Path = Path("input/questions.xlsx")
     output_dir: Path = Path("output")
     cache_dir: Path = Path("output/cache")
     submission_path: Path = Path("output/submission.csv")
@@ -115,7 +115,7 @@ class Settings:
             text_cleaning_output_dir=Path(
                 os.getenv("MMDLQA_TEXT_CLEANING_OUTPUT_DIR", "input/text_cleaning_output")
             ),
-            questions_path=Path(os.getenv("MMDLQA_QUESTIONS", "input/sample_questions.xlsx")),
+            questions_path=Path(os.getenv("MMDLQA_QUESTIONS", "input/questions.xlsx")),
             output_dir=Path(os.getenv("MMDLQA_OUTPUT_DIR", "output")),
             cache_dir=Path(os.getenv("MMDLQA_CACHE_DIR", "output/cache")),
             submission_path=Path(os.getenv("MMDLQA_SUBMISSION", "output/submission.csv")),
