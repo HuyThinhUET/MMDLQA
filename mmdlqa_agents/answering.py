@@ -92,6 +92,8 @@ class Answerer:
             "Claims must be a JSON array of atomic claims with evidence_files and optional quotes. "
             "If at least one context file is plausibly relevant, give the best supported answer even when evidence is partial. "
             "Use Not enough data to answer only when no context file is relevant at all. "
+            "The answer field must contain only the final answer, never rationale:, reasoning:, explanation:, or citation prose. "
+            "Do not put a sentence about why the evidence is useful in answer; put that in claims or notes. "
             "For exact_match questions, keep answer minimal: number, label, option letter, date, or short phrase only. "
             "Do not invent external facts.",
             question,
@@ -108,7 +110,7 @@ class Answerer:
         }
         valid_files = {r.chunk.file_path for r in narrowed}
         schema_hint = {
-            "answer": "string",
+            "answer": "final answer only, no rationale/explanation prefix",
             "evidences": ["file paths from context"],
             "claims": [
                 {
@@ -128,6 +130,7 @@ class Answerer:
                 valid_files,
                 require_claims=True,
                 allow_insufficient=not self.settings.force_best_effort_answer or not valid_files,
+                max_answer_words=10 if exact else None,
             ),
             schema_name="baseline_answer",
             schema_hint=schema_hint,
@@ -257,7 +260,9 @@ class Answerer:
             return None
         system = secure_system_prompt(
             "You answer image questions using only the provided images and file identifiers. "
-            "Return JSON with keys answer, evidences, and notes. Do not answer from external knowledge.",
+            "Return JSON with keys answer, evidences, and notes. "
+            "The answer field must contain only the final answer, not notes or rationale. "
+            "Do not answer from external knowledge.",
             question,
             include_answer_contract=True,
         )
@@ -291,6 +296,7 @@ class Answerer:
                     set(file_paths),
                     require_claims=False,
                     allow_insufficient=not self.settings.force_best_effort_answer or not file_paths,
+                    max_answer_words=10 if question.answer_type.casefold() == "exact_match" else None,
                 ),
                 schema_name="vision_answer",
                 schema_hint={
@@ -331,6 +337,7 @@ def normalize_answer(answer: str, exact: bool, question: Question | None = None)
     answer = normalize_text(answer)
     if not answer:
         return ""
+    answer = strip_answer_leakage(answer)
     if question is not None:
         return apply_answer_contract(answer, question, exact)
     if exact:
@@ -338,6 +345,17 @@ def normalize_answer(answer: str, exact: bool, question: Question | None = None)
         if re.fullmatch(r"-?\d+\.0", answer):
             answer = answer[:-2]
     return answer
+
+
+def strip_answer_leakage(answer: str) -> str:
+    answer = re.sub(
+        r"^(?:final answer|answer|rationale|reasoning|reason|explanation|analysis|claim|evidence)\s*[:：]\s*",
+        "",
+        answer,
+        flags=re.I,
+    )
+    answer = re.sub(r"^\s*[-*]\s+", "", answer)
+    return normalize_text(answer)
 
 
 def parse_evidence_literal(value: str) -> list[str]:

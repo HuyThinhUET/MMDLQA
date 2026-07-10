@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -130,6 +131,40 @@ def validate_planner_output(max_steps: int) -> Validator:
     return validate
 
 
+def validate_question_profile_output() -> Validator:
+    allowed_categories = {
+        "fill_blank",
+        "direct_lookup",
+        "short_reasoning",
+        "long_multistep",
+        "calculation",
+        "media_understanding",
+    }
+    allowed_complexities = {"simple", "short", "medium", "long"}
+    allowed_workflows = {"single_step", "short_reasoning", "multi_step"}
+
+    def validate(data: dict[str, Any]) -> ValidationResult:
+        errors: list[str] = []
+        if str(data.get("category", "")).strip().casefold() not in allowed_categories:
+            errors.append("category must be one of: " + ", ".join(sorted(allowed_categories)))
+        if str(data.get("complexity", "")).strip().casefold() not in allowed_complexities:
+            errors.append("complexity must be one of: " + ", ".join(sorted(allowed_complexities)))
+        if str(data.get("expected_workflow", "")).strip().casefold() not in allowed_workflows:
+            errors.append("expected_workflow must be one of: " + ", ".join(sorted(allowed_workflows)))
+        for key in ["requires_calculation", "requires_media", "requires_multihop"]:
+            if not isinstance(data.get(key), bool):
+                errors.append(f"{key} must be a boolean")
+        for key in ["answer_style", "rationale"]:
+            if data.get(key) is not None and not isinstance(data.get(key), str):
+                errors.append(f"{key} must be a string")
+        confidence = data.get("confidence", 0.0)
+        if not isinstance(confidence, (int, float)):
+            errors.append("confidence must be a number")
+        return ValidationResult(not errors, errors)
+
+    return validate
+
+
 def validate_rerank_output(candidate_count: int) -> Validator:
     def validate(data: dict[str, Any]) -> ValidationResult:
         errors: list[str] = []
@@ -152,12 +187,21 @@ def validate_answer_output(
     *,
     require_claims: bool = True,
     allow_insufficient: bool = True,
+    max_answer_words: int | None = None,
 ) -> Validator:
     def validate(data: dict[str, Any]) -> ValidationResult:
         errors: list[str] = []
         answer = data.get("answer")
         if not isinstance(answer, str) or not normalize_text(answer):
             errors.append("answer must be a non-empty string")
+        elif leaks_reasoning_label(answer):
+            errors.append("answer must not include rationale/reasoning/explanation labels or prose")
+        elif (
+            max_answer_words is not None
+            and answer != "Not enough data to answer."
+            and len(normalize_text(answer).split()) > max_answer_words
+        ):
+            errors.append(f"answer must contain at most {max_answer_words} words for this answer format")
         if answer == "Not enough data to answer." and not allow_insufficient and valid_files:
             errors.append(
                 "answer must be a best-effort answer because at least one valid context file is available"
@@ -176,6 +220,15 @@ def validate_answer_output(
         return ValidationResult(not errors, errors)
 
     return validate
+
+
+def leaks_reasoning_label(answer: str) -> bool:
+    text = normalize_text(answer).casefold()
+    return bool(
+        re.match(r"^(final answer|answer|rationale|reasoning|reason|explanation|analysis|claim|evidence)\s*[:：]", text)
+        or text.startswith("because ")
+        or text.startswith("it provides ")
+    )
 
 
 def validate_critic_output() -> Validator:

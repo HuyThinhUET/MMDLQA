@@ -22,7 +22,8 @@ def main() -> None:
     parser.add_argument("--output-dir", default=None, help="Output directory.")
     parser.add_argument("--submission", default=None, help="Submission CSV path.")
     parser.add_argument("--rebuild-index", action="store_true", help="Rebuild index before answering.")
-    parser.add_argument("--limit", type=int, default=None, help="Only answer the first N questions.")
+    parser.add_argument("--max-questions", type=int, default=None, help="Only answer the first N questions; -1 answers all.")
+    parser.add_argument("--limit", type=int, default=None, help="Deprecated alias for --max-questions.")
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -43,8 +44,11 @@ def main() -> None:
         settings.submission_path = settings.output_dir / "submission.csv"
     if args.submission:
         settings.submission_path = Path(args.submission)
+    max_questions = args.max_questions if args.max_questions is not None else args.limit
+    if max_questions is not None:
+        settings.max_questions = max_questions
 
-    run_agentic_pipeline(settings, rebuild_index=args.rebuild_index, limit=args.limit)
+    run_agentic_pipeline(settings, rebuild_index=args.rebuild_index)
     print(f"Wrote {settings.submission_path}")
 
 

@@ -130,8 +130,8 @@ class EvidenceCritic:
             schema_name="critic_report",
             schema_hint=schema_hint,
             model=self.models.model_for("critic"),
-            max_tokens=700,
-            repair_max_tokens=450,
+            max_tokens=450,
+            repair_max_tokens=300,
         )
         data = validated.data
         issues = data.get("issues", [])

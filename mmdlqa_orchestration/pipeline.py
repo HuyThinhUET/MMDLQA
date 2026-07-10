@@ -20,8 +20,7 @@ def run_pipeline(settings: Settings, *, rebuild_index: bool = False, limit: int 
     settings.ensure_dirs()
     records, chunks = build_index(settings, force=rebuild_index)
     questions = load_questions(settings.questions_path)
-    if limit is not None:
-        questions = questions[:limit]
+    questions = apply_question_limit(questions, settings, limit)
 
     retriever = HybridRetriever(chunks, settings)
     answerer = Answerer(settings)
@@ -93,8 +92,7 @@ def run_agentic_pipeline(settings: Settings, *, rebuild_index: bool = False, lim
     settings.ensure_dirs()
     records, chunks = build_index(settings, force=rebuild_index)
     questions = load_questions(settings.questions_path)
-    if limit is not None:
-        questions = questions[:limit]
+    questions = apply_question_limit(questions, settings, limit)
 
     rag = SentenceRAG(chunks, settings)
     answerer = AgenticAnswerer(settings, rag)
@@ -158,7 +156,8 @@ def print_run_preflight(settings: Settings) -> None:
     print(
         "[run] "
         f"use_llm={settings.use_llm} | openrouter_key_present={key_present} | "
-        f"llm_available={llm_available} | evidence_scanner={settings.use_evidence_scanner}",
+        f"llm_available={llm_available} | evidence_scanner={settings.use_evidence_scanner} | "
+        f"max_questions={settings.max_questions}",
         flush=True,
     )
     if not llm_available:
@@ -167,3 +166,10 @@ def print_run_preflight(settings: Settings) -> None:
             "planner/MoE/critic/evidence scanner LLM calls will be skipped.",
             flush=True,
         )
+
+
+def apply_question_limit(questions, settings: Settings, limit: int | None = None):
+    max_questions = settings.max_questions if limit is None else limit
+    if max_questions < 0:
+        return questions
+    return questions[:max_questions]

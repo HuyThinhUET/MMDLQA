@@ -89,6 +89,11 @@ class PromptedReasoner:
                 "evidences_must_be_files_from_context": True,
                 "claims_required": True,
                 "best_effort_required": self.settings.force_best_effort_answer,
+                "answer_field_rule": (
+                    "The answer field must contain only the final answer value/text. "
+                    "Never include prefixes such as rationale:, reasoning:, explanation:, evidence:, or because. "
+                    "Do not put a sentence about why the evidence is useful in answer; put that in rationale or claims."
+                ),
                 "claims_schema": {
                     "claim": "one atomic statement supporting the answer",
                     "evidence_files": ["file paths from context supporting this claim"],
@@ -103,7 +108,7 @@ class PromptedReasoner:
         }
         valid_files = {result.chunk.file_path for result in narrowed}
         schema_hint = {
-            "answer": "string",
+            "answer": "final answer only, no rationale/explanation prefix",
             "evidences": ["file paths from context"],
             "rationale": "short rationale",
             "claims": [
@@ -131,12 +136,13 @@ class PromptedReasoner:
                 valid_files,
                 require_claims=True,
                 allow_insufficient=not self.settings.force_best_effort_answer or not valid_files,
+                max_answer_words=10 if exact else None,
             ),
             schema_name=f"{self.name}_answer",
             schema_hint=schema_hint,
             model=self.model,
-            max_tokens=1200,
-            repair_max_tokens=800,
+            max_tokens=700,
+            repair_max_tokens=450,
         )
         data = validated.data
         answer = normalize_answer(str(data.get("answer", "")), exact, state.question)
@@ -276,6 +282,7 @@ def build_reasoners(settings: Settings, answerer: Answerer):
                         "Use only the provided context. Return JSON with keys answer, evidences, rationale, claims. "
                         "Claims must be atomic statements with evidence_files and optional quotes. "
                         "For exact_match, answer with only the minimal value, label, option letter, date, or short phrase. "
+                        "The answer field must never contain rationale or evidence commentary. "
                         "If any context file is plausibly relevant, give the best supported exact answer even when evidence is partial. "
                         "Use Not enough data to answer only when no context file is relevant at all."
                     ),
@@ -292,6 +299,7 @@ def build_reasoners(settings: Settings, answerer: Answerer):
                         "Return JSON with keys answer, evidences, rationale, claims. "
                         "Claims must be atomic statements with evidence_files and optional quotes. "
                         "Evidences must be file paths from the context. "
+                        "The answer field must never contain rationale or evidence commentary. "
                         "If any context file is plausibly relevant, give a best-effort answer grounded in that context. "
                         "Use Not enough data to answer only when no context file is relevant at all."
                     ),

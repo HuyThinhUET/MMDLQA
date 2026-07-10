@@ -53,6 +53,10 @@ def answer_contract_payload(question: Question) -> dict[str, Any]:
         **asdict(contract),
         "insufficient_answer": INSUFFICIENT_ANSWER,
         "evidence_rule": "evidences must be exact file paths from the provided context only",
+        "answer_field_rule": (
+            "answer must contain only the final answer value/text, never rationale, evidence discussion, "
+            "source commentary, or reasoning steps"
+        ),
     }
 
 
@@ -66,6 +70,8 @@ def answer_contract_prompt(question: Question) -> str:
         f"even when evidence is partial. Use {INSUFFICIENT_ANSWER} only when no retrieved file is relevant. "
         "For text answers, use the same language as the question. Preserve proper nouns, "
         "identifiers, option letters, units, formulas, dates, and file names exactly when needed. "
+        "Put reasoning only in rationale/claims fields when the schema has them; never put rationale, "
+        "source commentary, or evidence descriptions in the answer field. "
         "Do not add explanations outside the requested answer format."
     )
 

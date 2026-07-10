@@ -26,6 +26,20 @@ class ReasoningStep:
 
 
 @dataclass(slots=True)
+class QuestionProfile:
+    category: str = "short_reasoning"
+    complexity: str = "short"
+    expected_workflow: str = "single_step"
+    requires_calculation: bool = False
+    requires_media: bool = False
+    requires_multihop: bool = False
+    answer_style: str = ""
+    confidence: float = 0.0
+    rationale: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class AnswerCandidate:
     source: str
     answer: str
@@ -90,6 +104,7 @@ class ToolPlan:
 @dataclass(slots=True)
 class AgentState:
     question: Question
+    question_profile: QuestionProfile = field(default_factory=QuestionProfile)
     steps: list[ReasoningStep] = field(default_factory=list)
     rag_queries: list[RagQuery] = field(default_factory=list)
     evidence_pool: list[RetrievedChunk] = field(default_factory=list)

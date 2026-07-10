@@ -88,56 +88,65 @@ class EvidenceScanner:
 
         selected: list[RetrievedChunk] = []
         assessments: list[dict[str, Any]] = []
-        irrelevant_streak = 0
-        stop_reason = ""
+        direction_stops: dict[str, dict[str, Any]] = {}
         processed_files = 0
 
-        cursor = 0
-        while cursor < len(candidates):
-            if irrelevant_streak >= self.settings.evidence_scan_irrelevant_patience:
-                stop_reason = "irrelevant_patience_reached"
-                break
-            batch, next_cursor = next_same_role_batch(
-                candidates,
-                cursor,
-                max(1, self.settings.evidence_scan_batch_size),
-            )
-            role = scan_role_for_modality(batch[0].modality)
-            model = self.models.model_for(role)
-            batch_assessments = self.assess_batch(question, query, batch, model)
-            by_index = {item.index: item for item in batch}
-            for candidate in batch:
-                assessment = batch_assessments.get(candidate.index) or ScanAssessment(
-                    relevance="irrelevant",
-                    useful_snippets=[],
-                    rationale="missing assessment",
-                    model=model,
-                )
-                processed_files += 1
-                assessments.append(
-                    {
-                        "file": candidate.file_path,
-                        "modality": candidate.modality,
-                        "relevance": assessment.relevance,
-                        "confidence": assessment.confidence,
-                        "model": assessment.model or model,
-                        "snippet_count": len(assessment.useful_snippets),
-                        "rationale": assessment.rationale,
-                    }
-                )
-                if assessment.is_relevant:
-                    irrelevant_streak = 0
-                    selected.extend(annotate_chunks(by_index[candidate.index], assessment))
-                else:
-                    irrelevant_streak += 1
-                    if irrelevant_streak >= self.settings.evidence_scan_irrelevant_patience:
-                        stop_reason = "irrelevant_patience_reached"
-                        break
-            cursor = next_cursor
+        for direction, direction_candidates in candidates_by_direction(candidates).items():
+            cursor = 0
+            irrelevant_streak = 0
+            direction_processed = 0
+            direction_stop = ""
+            model = self.models.model_for(direction)
+            while cursor < len(direction_candidates):
+                if irrelevant_streak >= self.settings.evidence_scan_irrelevant_patience:
+                    direction_stop = "irrelevant_patience_reached"
+                    break
+                batch = direction_candidates[cursor : cursor + max(1, self.settings.evidence_scan_batch_size)]
+                batch_assessments = self.assess_batch(question, query, batch, model)
+                by_index = {item.index: item for item in batch}
+                for candidate in batch:
+                    assessment = batch_assessments.get(candidate.index) or ScanAssessment(
+                        relevance="irrelevant",
+                        useful_snippets=[],
+                        rationale="missing assessment",
+                        model=model,
+                    )
+                    processed_files += 1
+                    direction_processed += 1
+                    assessments.append(
+                        {
+                            "file": candidate.file_path,
+                            "modality": candidate.modality,
+                            "direction": direction,
+                            "relevance": assessment.relevance,
+                            "confidence": assessment.confidence,
+                            "model": assessment.model or model,
+                            "snippet_count": len(assessment.useful_snippets),
+                            "rationale": assessment.rationale,
+                        }
+                    )
+                    if assessment.is_relevant:
+                        irrelevant_streak = 0
+                        selected.extend(annotate_chunks(by_index[candidate.index], assessment))
+                    else:
+                        irrelevant_streak += 1
+                        if irrelevant_streak >= self.settings.evidence_scan_irrelevant_patience:
+                            direction_stop = "irrelevant_patience_reached"
+                            break
+                cursor += len(batch)
+            direction_stops[direction] = {
+                "candidate_files": len(direction_candidates),
+                "processed_files": direction_processed,
+                "irrelevant_streak": irrelevant_streak,
+                "stop_reason": direction_stop or "exhausted_candidates",
+                "model": model,
+            }
 
         if not selected:
             selected = retrieved[: self.settings.rerank_candidate_k]
-            stop_reason = stop_reason or "fallback_no_relevant_file"
+            stop_reason = "fallback_no_relevant_file"
+        else:
+            stop_reason = "direction_scans_complete"
 
         selected = dedupe_retrieved(selected)[: self.settings.rerank_candidate_k]
         return selected, {
@@ -149,7 +158,9 @@ class EvidenceScanner:
             "processed_files": processed_files,
             "kept_chunks": len(selected),
             "irrelevant_patience": self.settings.evidence_scan_irrelevant_patience,
-            "stop_reason": stop_reason or "exhausted_candidates",
+            "independent_stop_by_direction": True,
+            "stop_reason": stop_reason,
+            "direction_stops": direction_stops,
             "assessments": assessments,
         }
 
@@ -219,8 +230,8 @@ class EvidenceScanner:
                 schema_name="evidence_scan",
                 schema_hint=schema_hint,
                 model=model,
-                max_tokens=900,
-                repair_max_tokens=500,
+                max_tokens=550,
+                repair_max_tokens=300,
             )
             return parse_assessments(validated.data, batch, model)
         except BudgetExceededError:
@@ -265,6 +276,13 @@ def next_same_role_batch(
         batch.append(candidates[next_cursor])
         next_cursor += 1
     return batch, next_cursor
+
+
+def candidates_by_direction(candidates: list[FileCandidate]) -> dict[str, list[FileCandidate]]:
+    grouped: dict[str, list[FileCandidate]] = {}
+    for candidate in candidates:
+        grouped.setdefault(scan_role_for_modality(candidate.modality), []).append(candidate)
+    return grouped
 
 
 def scan_role_for_modality(modality: str) -> str:
@@ -393,20 +411,15 @@ def extract_heuristic_snippets(candidate: FileCandidate, query_tokens: set[str])
 
 def annotate_chunks(candidate: FileCandidate, assessment: ScanAssessment) -> list[RetrievedChunk]:
     boost = 12.0 if assessment.relevance == "direct" else 7.0
-    note_parts = [
-        "[Evidence scan]",
-        f"relevance: {assessment.relevance}",
-        f"confidence: {assessment.confidence:.2f}",
-    ]
-    if assessment.rationale:
-        note_parts.append(f"rationale: {assessment.rationale}")
-    if assessment.useful_snippets:
-        note_parts.append("useful snippets:\n" + "\n".join(f"- {snippet}" for snippet in assessment.useful_snippets))
-    note = "\n".join(note_parts)
     annotated: list[RetrievedChunk] = []
     for result in candidate.chunks:
-        metadata = {**result.chunk.metadata, "evidence_scan": assessment.relevance}
-        chunk = replace(result.chunk, text=f"{note}\n\n{result.chunk.text}", metadata=metadata)
+        metadata = {
+            **result.chunk.metadata,
+            "evidence_scan": assessment.relevance,
+            "evidence_scan_confidence": assessment.confidence,
+            "evidence_scan_snippets": assessment.useful_snippets,
+        }
+        chunk = replace(result.chunk, metadata=metadata)
         reasons = [*result.reasons, f"evidence_scan:{assessment.relevance}"]
         annotated.append(RetrievedChunk(chunk=chunk, score=result.score + boost, reasons=reasons))
     return annotated

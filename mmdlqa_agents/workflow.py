@@ -14,6 +14,7 @@ from .critic import EvidenceCritic
 from .evidence import ledger_to_dicts
 from .evidence_scanner import EvidenceScanner
 from .planner import QuestionPlanner
+from .question_classifier import QuestionClassifier
 from .reasoners import CandidateAggregator, MultiExpertReasoner
 
 
@@ -25,6 +26,7 @@ class AgenticAnswerer:
         *,
         planner: QuestionPlanner | None = None,
         critic: EvidenceCritic | None = None,
+        classifier: QuestionClassifier | None = None,
         scanner: EvidenceScanner | None = None,
         reasoner: Answerer | None = None,
         moe: MultiExpertReasoner | None = None,
@@ -34,6 +36,7 @@ class AgenticAnswerer:
         self.models = ModelRouter(settings)
         self.rag = rag
         self.reasoner = reasoner or Answerer(settings)
+        self.classifier = classifier or QuestionClassifier(settings)
         self.planner = planner or QuestionPlanner(settings)
         self.critic = critic or EvidenceCritic(settings)
         self.scanner = scanner or EvidenceScanner(settings)
@@ -45,18 +48,22 @@ class AgenticAnswerer:
         tracker = current_tracker()
         try:
             if tracker:
+                with tracker.stage("agentic_question_classification"):
+                    state.question_profile = self.classifier.classify(question)
                 with tracker.stage("agentic_planning"):
-                    state.steps = self.planner.plan(question)
+                    state.steps = self.planner.plan(question, state.question_profile)
                 with tracker.stage("agentic_planned_retrieval"):
                     self.retrieve_planned_steps(state)
             else:
-                state.steps = self.planner.plan(question)
+                state.question_profile = self.classifier.classify(question)
+                state.steps = self.planner.plan(question, state.question_profile)
                 self.retrieve_planned_steps(state)
         except BudgetExceededError as exc:
             state.diagnostics["limit_stop"] = str(exc)
 
         selected = AnswerCandidate(source="empty", answer="Not enough data to answer.")
         rounds = max(1, self.settings.agentic_max_rounds)
+        min_rounds = min(rounds, max(1, self.settings.agentic_min_rounds))
         for round_idx in range(rounds):
             try:
                 if tracker:
@@ -76,7 +83,9 @@ class AgenticAnswerer:
                 state.diagnostics["limit_stop"] = str(exc)
                 break
             state.critic_reports.append(report)
-            if report.ok or round_idx >= rounds - 1 or not report.missing_queries:
+            if round_idx + 1 >= min_rounds and (report.ok or round_idx >= rounds - 1 or not report.missing_queries):
+                break
+            if round_idx >= rounds - 1:
                 break
             state.diagnostics["retried_missing_evidence"] = True
             try:
@@ -258,6 +267,18 @@ def best_line_for_question(question: str, text: str) -> str:
 
 def summarize_state(state: AgentState) -> dict:
     return {
+        "question_profile": {
+            "category": state.question_profile.category,
+            "complexity": state.question_profile.complexity,
+            "expected_workflow": state.question_profile.expected_workflow,
+            "requires_calculation": state.question_profile.requires_calculation,
+            "requires_media": state.question_profile.requires_media,
+            "requires_multihop": state.question_profile.requires_multihop,
+            "answer_style": state.question_profile.answer_style,
+            "confidence": state.question_profile.confidence,
+            "rationale": state.question_profile.rationale,
+            "diagnostics": state.question_profile.diagnostics,
+        },
         "steps": [
             {
                 "step_id": step.step_id,

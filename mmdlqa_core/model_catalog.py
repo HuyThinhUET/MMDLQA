@@ -4,20 +4,20 @@ from dataclasses import dataclass
 
 
 DEFAULT_ROLE_MODELS = {
-    "default": "openai/gpt-5.6-terra",
-    "planner": "openai/gpt-5.6-terra",
-    "rerank": "openai/gpt-5.6-luna",
-    "exact": "anthropic/claude-sonnet-5",
-    "synthesis": "openai/gpt-5.6-sol-pro",
-    "critic": "anthropic/claude-sonnet-5",
-    "coder": "x-ai/grok-4.5",
-    "vision": "anthropic/claude-sonnet-5",
-    "scan_text": "openai/gpt-5.6-luna",
-    "scan_table": "x-ai/grok-4.5",
-    "scan_document": "anthropic/claude-sonnet-5",
-    "scan_image": "anthropic/claude-sonnet-5",
-    "scan_audio": "openai/gpt-5.6-luna",
-    "scan_video": "openai/gpt-5.6-luna",
+    "default": "google/gemini-2.5-flash-lite",
+    "planner": "google/gemini-2.5-flash-lite",
+    "rerank": "google/gemini-2.5-flash-lite",
+    "exact": "deepseek/deepseek-chat-v3.1",
+    "synthesis": "deepseek/deepseek-chat-v3.1",
+    "critic": "deepseek/deepseek-chat-v3.1",
+    "coder": "qwen/qwen3-coder-flash",
+    "vision": "google/gemini-2.5-flash",
+    "scan_text": "google/gemini-2.5-flash-lite",
+    "scan_table": "qwen/qwen3-coder-flash",
+    "scan_document": "deepseek/deepseek-chat-v3.1",
+    "scan_image": "google/gemini-2.5-flash",
+    "scan_audio": "google/gemini-2.5-flash-lite",
+    "scan_video": "google/gemini-2.5-flash-lite",
 }
 
 
